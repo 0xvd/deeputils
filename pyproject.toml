@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deeputils"
+authors = [
+    {name = "0xvd", email = "0xvd12@gmail.com"},
+]
+description = "Safe, declarative traversal, extraction, and parsing helpers for nested data structures"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = [
+    "traversal",
+    "extraction",
+    "nested",
+    "dict",
+    "utils",
+    "parsing",
+    "yt-dlp",
+]
+license = "Unlicense"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Public Domain",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/0xvd/deeputils"
+Tracker = "https://github.com/0xvd/deeputils/issues"
+
+[tool.hatch.version]
+path = "deeputils/version.py"
+pattern = "__version__ = '(?P<version>[^']+)'"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/deeputils",
+    "/Changelog.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/README.md",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["deeputils"]
+exclude = [
+    "/deeputils/**/*.md",
+]
+
+[tool.hatch.envs.default]
+path = ".venv"

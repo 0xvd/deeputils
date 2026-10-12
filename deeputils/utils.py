@@ -1,0 +1,5318 @@
+# Adapted from yt-dlp.
+# https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/utils/_utils.py
+
+import base64
+import binascii
+import calendar
+import codecs
+import collections
+import collections.abc
+import contextlib
+import datetime as dt
+import email.header
+import email.utils
+import errno
+import functools
+import hashlib
+import hmac
+import typing
+import html.entities
+import html.parser
+import inspect
+import io
+import itertools
+import json
+import locale
+import math
+import mimetypes
+import netrc
+import os
+import platform
+import random
+import re
+import secrets
+import socket
+import ssl
+import struct
+import sys
+import time
+import traceback
+import types
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree
+import xml.etree.ElementTree
+
+from . import traversal
+
+__name__ = __name__.rsplit('.', 1)[0]  # noqa: A001 # Pretend to be the parent module
+
+
+class NO_DEFAULT:
+    pass
+
+class HTMLParseError(ValueError):
+    pass
+
+def IDENTITY(x):
+    return x
+
+_ARRAY_TYPE_LOOKUP = {
+    'Int8Array': 'b',
+    'Uint8Array': 'B',
+    'Uint8ClampedArray': 'B',
+    'Int16Array': 'h',
+    'Uint16Array': 'H',
+    'Float16Array': 'e',
+    'Int32Array': 'i',
+    'Uint32Array': 'I',
+    'Float32Array': 'f',
+    'Float64Array': 'd',
+    'BigInt64Array': 'q',
+    'BigUint64Array': 'Q',
+}
+
+ENGLISH_MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December']
+
+MONTH_NAMES = {
+    'en': ENGLISH_MONTH_NAMES,
+    'fr': [
+        'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+        'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'],
+    'is': [
+        'janúar', 'febrúar', 'mars', 'apríl', 'maí', 'júní',
+        'júlí', 'ágúst', 'september', 'október', 'nóvember', 'desember'],
+    # these follow the genitive grammatical case (dopełniacz)
+    # some websites might be using nominative, which will require another month list
+    # https://en.wikibooks.org/wiki/Polish/Noun_cases
+    'pl': ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca',
+           'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'],
+}
+
+# From https://github.com/python/cpython/blob/3.11/Lib/email/_parseaddr.py#L36-L42
+TIMEZONE_NAMES = {
+    'UT': 0, 'UTC': 0, 'GMT': 0, 'Z': 0,
+    'AST': -4, 'ADT': -3,  # Atlantic (used in Canada)
+    'EST': -5, 'EDT': -4,  # Eastern
+    'CST': -6, 'CDT': -5,  # Central
+    'MST': -7, 'MDT': -6,  # Mountain
+    'PST': -8, 'PDT': -7,   # Pacific
+}
+
+# needed for sanitizing filenames in restricted mode
+ACCENT_CHARS = dict(zip('ÂÃÄÀÁÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖŐØŒÙÚÛÜŰÝÞßàáâãäåæçèéêëìíîïðñòóôõöőøœùúûüűýþÿ',
+                        itertools.chain('AAAAAA', ['AE'], 'CEEEEIIIIDNOOOOOOO', ['OE'], 'UUUUUY', ['TH', 'ss'],
+                                        'aaaaaa', ['ae'], 'ceeeeiiiionooooooo', ['oe'], 'uuuuuy', ['th'], 'y'), strict=True))
+
+DATE_FORMATS = (
+    '%d %B %Y',
+    '%d %b %Y',
+    '%B %d %Y',
+    '%B %dst %Y',
+    '%B %dnd %Y',
+    '%B %drd %Y',
+    '%B %dth %Y',
+    '%b %d %Y',
+    '%b %dst %Y',
+    '%b %dnd %Y',
+    '%b %drd %Y',
+    '%b %dth %Y',
+    '%b %dst %Y %I:%M',
+    '%b %dnd %Y %I:%M',
+    '%b %drd %Y %I:%M',
+    '%b %dth %Y %I:%M',
+    '%Y %m %d',
+    '%Y-%m-%d',
+    '%Y.%m.%d.',
+    '%Y/%m/%d',
+    '%Y/%m/%d %H:%M',
+    '%Y/%m/%d %H:%M:%S',
+    '%Y%m%d%H%M',
+    '%Y%m%d%H%M%S',
+    '%Y%m%d',
+    '%Y-%m-%d %H:%M',
+    '%Y-%m-%d %H:%M:%S',
+    '%Y-%m-%d %H:%M:%S.%f',
+    '%Y-%m-%d %H:%M:%S:%f',
+    '%d.%m.%Y %H:%M',
+    '%d.%m.%Y %H.%M',
+    '%Y-%m-%dT%H:%M:%SZ',
+    '%Y-%m-%dT%H:%M:%S.%fZ',
+    '%Y-%m-%dT%H:%M:%S.%f0Z',
+    '%Y-%m-%dT%H:%M:%S',
+    '%Y-%m-%dT%H:%M:%S.%f',
+    '%Y-%m-%dT%H:%M',
+    '%b %d %Y at %H:%M',
+    '%b %d %Y at %H:%M:%S',
+    '%B %d %Y at %H:%M',
+    '%B %d %Y at %H:%M:%S',
+    '%H:%M %d-%b-%Y',
+)
+
+DATE_FORMATS_DAY_FIRST = list(DATE_FORMATS)
+DATE_FORMATS_DAY_FIRST.extend([
+    '%d-%m-%Y',
+    '%d.%m.%Y',
+    '%d.%m.%y',
+    '%d/%m/%Y',
+    '%d/%m/%y',
+    '%d/%m/%Y %H:%M:%S',
+    '%d-%m-%Y %H:%M',
+    '%H:%M %d/%m/%Y',
+])
+
+DATE_FORMATS_MONTH_FIRST = list(DATE_FORMATS)
+DATE_FORMATS_MONTH_FIRST.extend([
+    '%m-%d-%Y',
+    '%m.%d.%Y',
+    '%m/%d/%Y',
+    '%m/%d/%y',
+    '%m/%d/%Y %H:%M:%S',
+])
+
+PACKED_CODES_RE = r"}\('(.+)',(\d+),(\d+),'([^']+)'\.split\('\|'\)"
+JSON_LD_RE = r'(?is)<script[^>]+type=(["\']?)application/ld\+json\1[^>]*>\s*(?P<json_ld>{.+?}|\[.+?\])\s*</script>'
+
+NUMBER_RE = r'\d+(?:\.\d+)?'
+
+
+@functools.cache
+def preferredencoding():
+    """Get preferred encoding.
+
+    Returns the best encoding scheme for the system, based on
+    locale.getpreferredencoding() and some further tweaks.
+    """
+    try:
+        pref = locale.getpreferredencoding()
+        'TEST'.encode(pref)
+    except Exception:
+        pref = 'UTF-8'
+
+    return pref
+
+def partial_application(func):
+    sig = inspect.signature(func)
+    required_args = [
+        param.name for param in sig.parameters.values()
+        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        if param.default is inspect.Parameter.empty
+    ]
+
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        if set(required_args[len(args):]).difference(kwargs):
+            return functools.partial(func, *args, **kwargs)
+        return func(*args, **kwargs)
+
+    return wrapped
+
+
+def find_xpath_attr(node, xpath, key, val=None):
+    """ Find the xpath xpath[@key=val] """
+    assert re.match(r'^[a-zA-Z_-]+$', key)
+    expr = xpath + (f'[@{key}]' if val is None else f"[@{key}='{val}']")
+    return node.find(expr)
+
+
+def xpath_with_ns(path, ns_map):
+    """Expand namespace-prefixed names to Clark notation."""
+    components = [c.split(':') for c in path.split('/')]
+    replaced = []
+    for c in components:
+        if len(c) == 1:
+            replaced.append(c[0])
+        else:
+            ns, tag = c
+            replaced.append(f'{{{ns_map[ns]}}}{tag}')
+    return '/'.join(replaced)
+
+
+def xpath_element(node, xpath, name=None, fatal=False, default=NO_DEFAULT):
+    def _find_xpath(xpath):
+        return node.find(xpath)
+
+    if isinstance(xpath, str):
+        n = _find_xpath(xpath)
+    else:
+        for xp in xpath:
+            n = _find_xpath(xp)
+            if n is not None:
+                break
+
+    if n is None:
+        if default is not NO_DEFAULT:
+            return default
+        elif fatal:
+            name = xpath if name is None else name
+            raise DeepError(f'Could not find XML element {name}')
+        else:
+            return None
+    return n
+
+
+def xpath_text(node, xpath, name=None, fatal=False, default=NO_DEFAULT):
+    n = xpath_element(node, xpath, name, fatal=fatal, default=default)
+    if n is None or n == default:
+        return n
+    if n.text is None:
+        if default is not NO_DEFAULT:
+            return default
+        elif fatal:
+            name = xpath if name is None else name
+            raise DeepError(f'Could not find XML element\'s text {name}')
+        else:
+            return None
+    return n.text
+
+
+def xpath_attr(node, xpath, key, name=None, fatal=False, default=NO_DEFAULT):
+    n = find_xpath_attr(node, xpath, key)
+    if n is None:
+        if default is not NO_DEFAULT:
+            return default
+        elif fatal:
+            name = f'{xpath}[@{key}]' if name is None else name
+            raise DeepError(f'Could not find XML attribute {name}')
+        else:
+            return None
+    return n.attrib[key]
+
+
+def get_element_by_id(id, html, **kwargs):
+    """Return the content of the tag with the specified ID in the passed HTML document"""
+    return get_element_by_attribute('id', id, html, **kwargs)
+
+
+def get_element_html_by_id(id, html, **kwargs):
+    """Return the html of the tag with the specified ID in the passed HTML document"""
+    return get_element_html_by_attribute('id', id, html, **kwargs)
+
+
+def get_element_by_class(class_name, html):
+    """Return the content of the first tag with the specified class in the passed HTML document"""
+    retval = get_elements_by_class(class_name, html)
+    return retval[0] if retval else None
+
+
+def get_element_html_by_class(class_name, html):
+    """Return the html of the first tag with the specified class in the passed HTML document"""
+    retval = get_elements_html_by_class(class_name, html)
+    return retval[0] if retval else None
+
+
+def get_element_by_attribute(attribute, value, html, **kwargs):
+    retval = get_elements_by_attribute(attribute, value, html, **kwargs)
+    return retval[0] if retval else None
+
+
+def get_element_html_by_attribute(attribute, value, html, **kargs):
+    retval = get_elements_html_by_attribute(attribute, value, html, **kargs)
+    return retval[0] if retval else None
+
+
+def get_elements_by_class(class_name, html, **kargs):
+    """Return the content of all tags with the specified class in the passed HTML document as a list"""
+    return get_elements_by_attribute(
+        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)}(?=[\'"\s])[^\'"]*',
+        html, escape_value=False)
+
+
+def get_elements_html_by_class(class_name, html):
+    """Return the html of all tags with the specified class in the passed HTML document as a list"""
+    return get_elements_html_by_attribute(
+        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)}(?=[\'"\s])[^\'"]*',
+        html, escape_value=False)
+
+
+def get_elements_by_attribute(*args, **kwargs):
+    """Return the content of the tag with the specified attribute in the passed HTML document"""
+    return [content for content, _ in get_elements_text_and_html_by_attribute(*args, **kwargs)]
+
+
+def get_elements_html_by_attribute(*args, **kwargs):
+    """Return the html of the tag with the specified attribute in the passed HTML document"""
+    return [whole for _, whole in get_elements_text_and_html_by_attribute(*args, **kwargs)]
+
+
+def get_elements_text_and_html_by_attribute(attribute, value, html, *, tag=r'[\w:.-]+', escape_value=True):
+    """
+    Return the text (content) and the html (whole) of the tag with the specified
+    attribute in the passed HTML document
+    """
+    if not value:
+        return
+
+    quote = '' if re.match(r'''[\s"'`=<>]''', value) else '?'
+
+    value = re.escape(value) if escape_value else value
+
+    partial_element_re = rf'''(?x)
+        <(?P<tag>{tag})
+         (?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?
+         \s{re.escape(attribute)}\s*=\s*(?P<_q>['"]{quote})(?-x:{value})(?P=_q)
+        '''
+
+    for m in re.finditer(partial_element_re, html):
+        content, whole = get_element_text_and_html_by_tag(m.group('tag'), html[m.start():])
+
+        yield (
+            unescapeHTML(re.sub(r'^(?P<q>["\'])(?P<content>.*)(?P=q)$', r'\g<content>', content, flags=re.DOTALL)),
+            whole,
+        )
+
+
+class HTMLBreakOnClosingTagParser(html.parser.HTMLParser):
+    """
+    HTML parser which raises HTMLBreakOnClosingTagException upon reaching the
+    closing tag for the first opening tag it has encountered, and can be used
+    as a context manager
+    """
+
+    class HTMLBreakOnClosingTagException(Exception):
+        pass
+
+    def __init__(self):
+        self.tagstack = collections.deque()
+        html.parser.HTMLParser.__init__(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def close(self):
+        # handle_endtag does not return upon raising HTMLBreakOnClosingTagException,
+        # so data remains buffered; we no longer have any interest in it, thus
+        # override this method to discard it
+        pass
+
+    def handle_starttag(self, tag, _):
+        self.tagstack.append(tag)
+
+    def handle_endtag(self, tag):
+        if not self.tagstack:
+            raise ValueError('no tags in the stack')
+        while self.tagstack:
+            inner_tag = self.tagstack.pop()
+            if inner_tag == tag:
+                break
+        else:
+            raise ValueError(f'matching opening tag for closing {tag} tag not found')
+        if not self.tagstack:
+            raise self.HTMLBreakOnClosingTagException
+
+
+# XXX: This should be far less strict
+def get_element_text_and_html_by_tag(tag, html):
+    """
+    For the first element with the specified tag in the passed HTML document
+    return its' content (text) and the whole element (html)
+    """
+    def find_or_raise(haystack, needle, exc):
+        try:
+            return haystack.index(needle)
+        except ValueError:
+            raise exc
+    closing_tag = f'</{tag}>'
+    whole_start = find_or_raise(
+        html, f'<{tag}', ValueError(f'opening {tag} tag not found'))
+    content_start = find_or_raise(
+        html[whole_start:], '>', ValueError(f'malformed opening {tag} tag'))
+    content_start += whole_start + 1
+    with HTMLBreakOnClosingTagParser() as parser:
+        parser.feed(html[whole_start:content_start])
+        if not parser.tagstack or parser.tagstack[0] != tag:
+            raise ValueError(f'parser did not match opening {tag} tag')
+        offset = content_start
+        while offset < len(html):
+            next_closing_tag_start = find_or_raise(
+                html[offset:], closing_tag,
+                ValueError(f'closing {tag} tag not found'))
+            next_closing_tag_end = next_closing_tag_start + len(closing_tag)
+            try:
+                parser.feed(html[offset:offset + next_closing_tag_end])
+                offset += next_closing_tag_end
+            except HTMLBreakOnClosingTagParser.HTMLBreakOnClosingTagException:
+                return html[content_start:offset + next_closing_tag_start], \
+                    html[whole_start:offset + next_closing_tag_end]
+        raise ValueError('unexpected end of html')
+
+
+class HTMLAttributeParser(html.parser.HTMLParser):
+    """Trivial HTML parser to gather the attributes for a single element"""
+
+    def __init__(self):
+        self.attrs = {}
+        html.parser.HTMLParser.__init__(self)
+
+    def handle_starttag(self, tag, attrs):
+        self.attrs = dict(attrs)
+        raise ValueError('done')
+
+
+class HTMLListAttrsParser(html.parser.HTMLParser):
+    """HTML parser to gather the attributes for the elements of a list"""
+
+    def __init__(self):
+        html.parser.HTMLParser.__init__(self)
+        self.items = []
+        self._level = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'li' and self._level == 0:
+            self.items.append(dict(attrs))
+        self._level += 1
+
+    def handle_endtag(self, tag):
+        self._level -= 1
+
+
+def extract_attributes(html_element):
+    """Given a string for an HTML element such as
+    <el
+         a="foo" B="bar" c="&98;az" d=boz
+         empty= noval entity="&amp;"
+         sq='"' dq="'"
+    >
+    Decode and return a dictionary of attributes.
+    {
+        'a': 'foo', 'b': 'bar', c: 'baz', d: 'boz',
+        'empty': '', 'noval': None, 'entity': '&',
+        'sq': '"', 'dq': '\''
+    }.
+    """
+    parser = HTMLAttributeParser()
+    with contextlib.suppress(ValueError):
+        parser.feed(html_element)
+        parser.close()
+    return parser.attrs
+
+
+def parse_list(webpage):
+    """Given a string for an series of HTML <li> elements,
+    return a dictionary of their attributes"""
+    parser = HTMLListAttrsParser()
+    parser.feed(webpage)
+    parser.close()
+    return parser.items
+
+
+def clean_html(html):
+    """Clean an HTML snippet into a readable string"""
+
+    if html is None:  # Convenience for sanitizing descriptions etc.
+        return html
+
+    html = re.sub(r'\s+', ' ', html)
+    html = re.sub(r'(?u)\s?<\s?br\s?/?\s?>\s?', '\n', html)
+    html = re.sub(r'(?u)<\s?/\s?p\s?>\s?<\s?p[^>]*>', '\n', html)
+    # Strip html tags
+    html = re.sub('<.*?>', '', html)
+    # Replace html entities
+    html = unescapeHTML(html)
+    return html.strip()
+
+
+class LenientJSONDecoder(json.JSONDecoder):
+    # TODO: Write tests
+    def __init__(self, *args, transform_source=None, ignore_extra=False, close_objects=0, **kwargs):
+        self.transform_source, self.ignore_extra = transform_source, ignore_extra
+        self._close_attempts = 2 * close_objects
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def _close_object(err):
+        doc = err.doc[:err.pos]
+        # We need to add comma first to get the correct error message
+        if err.msg.startswith('Expecting \',\''):
+            return doc + ','
+        elif not doc.endswith(','):
+            return
+
+        if err.msg.startswith('Expecting property name'):
+            return doc[:-1] + '}'
+        elif err.msg.startswith('Expecting value'):
+            return doc[:-1] + ']'
+
+    def decode(self, s):
+        if self.transform_source:
+            s = self.transform_source(s)
+        for attempt in range(self._close_attempts + 1):
+            try:
+                if self.ignore_extra:
+                    return self.raw_decode(s.lstrip())[0]
+                return super().decode(s)
+            except json.JSONDecodeError as e:
+                if e.pos is None:
+                    raise
+                elif attempt < self._close_attempts:
+                    s = self._close_object(e)
+                    if s is not None:
+                        continue
+                raise type(e)(f'{e.msg} in {s[e.pos - 10:e.pos + 10]!r}', s, e.pos)
+        assert False, 'Too many attempts to decode JSON'
+
+
+def timeconvert(timestr):
+    """Convert RFC 2822 defined time string into system timestamp"""
+    timestamp = None
+    timetuple = email.utils.parsedate_tz(timestr)
+    if timetuple is not None:
+        timestamp = email.utils.mktime_tz(timetuple)
+    return timestamp
+
+
+def sanitize_filename(s, restricted=False, is_id=NO_DEFAULT):
+    """Sanitizes a string so it could be used as part of a filename.
+    @param restricted   Use a stricter subset of allowed characters
+    @param is_id        Whether this is an ID that should be kept unchanged if possible.
+                        If unset, yt-dlp's new sanitization rules are in effect
+    """
+    if s == '':
+        return ''
+
+    def replace_insane(char):
+        if restricted and char in ACCENT_CHARS:
+            return ACCENT_CHARS[char]
+        elif not restricted and char == '\n':
+            return '\0 '
+        elif is_id is NO_DEFAULT and not restricted and char in '"*:<>?|/\\':
+            # Replace with their full-width unicode counterparts
+            return {'/': '\u29F8', '\\': '\u29f9'}.get(char, chr(ord(char) + 0xfee0))
+        elif char == '?' or ord(char) < 32 or ord(char) == 127:
+            return ''
+        elif char == '"':
+            return '' if restricted else '\''
+        elif char == ':':
+            return '\0_\0-' if restricted else '\0 \0-'
+        elif char in '\\/|*<>':
+            return '\0_'
+        if restricted and (char in '!&\'()[]{}$;`^,#' or char.isspace() or ord(char) > 127):
+            return '' if unicodedata.category(char)[0] in 'CM' else '\0_'
+        return char
+
+    # Replace look-alike Unicode glyphs
+    if restricted and (is_id is NO_DEFAULT or not is_id):
+        s = unicodedata.normalize('NFKC', s)
+    s = re.sub(r'[0-9]+(?::[0-9]+)+', lambda m: m.group(0).replace(':', '_'), s)  # Handle timestamps
+    result = ''.join(map(replace_insane, s))
+    if is_id is NO_DEFAULT:
+        result = re.sub(r'(\0.)(?:(?=\1)..)+', r'\1', result)  # Remove repeated substitute chars
+        STRIP_RE = r'(?:\0.|[ _-])*'
+        result = re.sub(f'^\0.{STRIP_RE}|{STRIP_RE}\0.$', '', result)  # Remove substitute chars from start/end
+    result = result.replace('\0', '') or '_'
+
+    if not is_id:
+        while '__' in result:
+            result = result.replace('__', '_')
+        result = result.strip('_')
+        # Common case of "Foreign band name - English song title"
+        if restricted and result.startswith('-_'):
+            result = result[2:]
+        if result.startswith('-'):
+            result = '_' + result[len('-'):]
+        result = result.lstrip('.')
+        if not result:
+            result = '_'
+    return result
+
+
+def _sanitize_path_parts(parts):
+    sanitized_parts = []
+    for part in parts:
+        if not part or part == '.':
+            continue
+        elif part == '..':
+            if sanitized_parts and sanitized_parts[-1] != '..':
+                sanitized_parts.pop()
+            else:
+                sanitized_parts.append('..')
+            continue
+        # Replace invalid segments with `#`
+        # - trailing dots and spaces (`asdf...` => `asdf..#`)
+        # - invalid chars (`<>` => `##`)
+        sanitized_part = re.sub(r'[/<>:"\|\\?\*]|[\s.]$', '#', part)
+        sanitized_parts.append(sanitized_part)
+
+    return sanitized_parts
+
+
+def sanitize_path(s, force=False):
+    """Sanitizes and normalizes path on Windows"""
+    if sys.platform != 'win32':
+        if not force:
+            return s
+        root = '/' if s.startswith('/') else ''
+        path = '/'.join(_sanitize_path_parts(s.split('/')))
+        return root + path if root or path else '.'
+
+    normed = s.replace('/', '\\')
+
+    if normed.startswith('\\\\'):
+        # UNC path (`\\SERVER\SHARE`) or device path (`\\.`, `\\?`)
+        parts = normed.split('\\')
+        root = '\\'.join(parts[:4]) + '\\'
+        parts = parts[4:]
+    elif normed[1:2] == ':':
+        # absolute path or drive relative path
+        offset = 3 if normed[2:3] == '\\' else 2
+        root = normed[:offset]
+        parts = normed[offset:].split('\\')
+    else:
+        # relative/drive root relative path
+        root = '\\' if normed[:1] == '\\' else ''
+        parts = normed.split('\\')
+
+    path = '\\'.join(_sanitize_path_parts(parts))
+    return root + path if root or path else '.'
+
+
+def sanitize_url(url, *, scheme='http'):
+    # Prepend protocol-less URLs with `http:` scheme in order to mitigate
+    # the number of unwanted failures due to missing protocol
+    if url is None:
+        return
+    elif url.startswith('//'):
+        return f'{scheme}:{url}'
+    # Fix some common typos seen so far
+    COMMON_TYPOS = (
+        # https://github.com/ytdl-org/youtube-dl/issues/15649
+        (r'^httpss://', r'https://'),
+        # https://bx1.be/lives/direct-tv/
+        (r'^rmtp([es]?)://', r'rtmp\1://'),
+    )
+    for mistake, fixup in COMMON_TYPOS:
+        if re.match(mistake, url):
+            return re.sub(mistake, fixup, url)
+    return url
+
+
+def extract_basic_auth(url):
+    parts = urllib.parse.urlsplit(url)
+    if parts.username is None:
+        return url, None
+    url = urllib.parse.urlunsplit(parts._replace(netloc=(
+        parts.hostname if parts.port is None
+        else f'{parts.hostname}:{parts.port}')))
+    auth_payload = base64.b64encode(
+        ('{}:{}'.format(parts.username, parts.password or '')).encode())
+    return url, f'Basic {auth_payload.decode()}'
+
+if os.name in ('nt', 'ce'):
+    def _expanduser(path):
+        HOME = os.environ.get('HOME')
+        if not HOME:
+            return os.path.expanduser(path)
+        elif not path.startswith('~'):
+            return path
+        i = path.replace('\\', '/', 1).find('/')  # ~user
+        if i < 0:
+            i = len(path)
+        userhome = os.path.join(os.path.dirname(HOME), path[1:i]) if i > 1 else HOME
+        return userhome + path[i:]
+else:
+    _expanduser = os.path.expanduser
+
+def expand_path(s):
+    """Expand shell variables and ~"""
+    return os.path.expandvars(_expanduser(s))
+
+
+def orderedSet(iterable, *, lazy=False):
+    """Remove all duplicates from the input iterable"""
+    def _iter():
+        seen = []  # Do not use set since the items can be unhashable
+        for x in iterable:
+            if x not in seen:
+                seen.append(x)
+                yield x
+
+    return _iter() if lazy else list(_iter())
+
+
+def _htmlentity_transform(entity_with_semicolon):
+    """Transforms an HTML entity to a character."""
+    entity = entity_with_semicolon[:-1]
+
+    # Known non-numeric HTML entity
+    if entity in html.entities.name2codepoint:
+        return chr(html.entities.name2codepoint[entity])
+
+    # TODO: HTML5 allows entities without a semicolon.
+    # E.g. '&Eacuteric' should be decoded as 'Éric'.
+    if entity_with_semicolon in html.entities.html5:
+        return html.entities.html5[entity_with_semicolon]
+
+    mobj = re.match(r'#(x[0-9a-fA-F]+|[0-9]+)', entity)
+    if mobj is not None:
+        numstr = mobj.group(1)
+        if numstr.startswith('x'):
+            base = 16
+            numstr = f'0{numstr}'
+        else:
+            base = 10
+        # See https://github.com/ytdl-org/youtube-dl/issues/7518
+        with contextlib.suppress(ValueError):
+            return chr(int(numstr, base))
+
+    # Unknown entity in name, return its literal representation
+    return f'&{entity};'
+
+
+def unescapeHTML(s):
+    if s is None:
+        return None
+    assert isinstance(s, str)
+
+    return re.sub(
+        r'&([^&;]+;)', lambda m: _htmlentity_transform(m.group(1)), s)
+
+
+def escapeHTML(text):
+    return (
+        text
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+        .replace('"', '&quot;')
+        .replace("'", '&#39;')
+    )
+
+
+class netrc_from_content(netrc.netrc):
+    def __init__(self, content):
+        self.hosts, self.macros = {}, {}
+        with io.StringIO(content) as stream:
+            self._parse('-', stream, False)
+
+
+def encodeArgument(s):
+    # Legacy code that uses byte strings
+    # Uncomment the following line after fixing all post processors
+    # assert isinstance(s, str), 'Internal error: %r should be of type %r, is %r' % (s, str, type(s))
+    return s if isinstance(s, str) else s.decode('ascii')
+
+
+_timetuple = collections.namedtuple('Time', ('hours', 'minutes', 'seconds', 'milliseconds'))
+
+
+def timetuple_from_msec(msec):
+    secs, msec = divmod(msec, 1000)
+    mins, secs = divmod(secs, 60)
+    hrs, mins = divmod(mins, 60)
+    return _timetuple(hrs, mins, secs, msec)
+
+
+def formatSeconds(secs, delim=':', msec=False):
+    time = timetuple_from_msec(secs * 1000)
+    if time.hours:
+        ret = '%d%s%02d%s%02d' % (time.hours, delim, time.minutes, delim, time.seconds)
+    elif time.minutes:
+        ret = '%d%s%02d' % (time.minutes, delim, time.seconds)
+    else:
+        ret = '%d' % time.seconds
+    return '%s.%03d' % (ret, time.milliseconds) if msec else ret
+
+
+def bug_reports_message(before=';'):
+    from version import REPOSITORY
+
+    msg = (f'please report this issue on  https://github.com/{REPOSITORY}/issues?q= , '
+           'filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U')
+
+    before = before.rstrip()
+    if not before or before.endswith(('.', '!', '?')):
+        msg = msg[0].title() + msg[1:]
+
+    return (before + ' ' if before else '') + msg
+
+class DeepError(Exception):
+    """Error during info extraction."""
+
+    def __init__(self, msg, tb=None, expected=False, cause=None, video_id=None, ie=None):
+        """ tb, if given, is the original traceback (so that it can be printed out).
+        If expected is set, this is a normal error message and most likely not a bug in yt-dlp.
+        """
+        self.orig_msg = str(msg)
+        self.traceback = tb
+        self.expected = expected
+        self.cause = cause
+        self.video_id = video_id
+        self.ie = ie
+        self.exc_info = sys.exc_info()  # preserve original exception
+        if isinstance(self.exc_info[1], DeepError):
+            self.exc_info = self.exc_info[1].exc_info
+        super().__init__(self.__msg)
+
+    @property
+    def __msg(self):
+        return ''.join((
+            format_field(self.ie, None, '[%s] '),
+            format_field(self.video_id, None, '%s: '),
+            self.orig_msg,
+            format_field(self.cause, None, ' (caused by %r)'),
+            '' if self.expected else bug_reports_message()))
+
+    def format_traceback(self):
+        return join_nonempty(
+            self.traceback and ''.join(traceback.format_tb(self.traceback)),
+            self.cause and ''.join(traceback.format_exception(self.cause)[1:]),
+            delim='\n') or None
+
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if getattr(self, 'msg', None) and name not in ('msg', 'args'):
+            self.msg = self.__msg or type(self).__name__
+            self.args = (self.msg, )  # Cannot be property
+
+class RegexNotFoundError(DeepError):
+    """Error when a regex didn't match"""
+    pass
+
+class XAttrMetadataError(DeepError):
+    def __init__(self, code=None, msg='Unknown error'):
+        super().__init__(msg)
+        self.code = code
+        self.msg = msg
+
+        # Parsing code and msg
+        if (self.code in (errno.ENOSPC, errno.EDQUOT)
+                or 'No space left' in self.msg or 'Disk quota exceeded' in self.msg):
+            self.reason = 'NO_SPACE'
+        elif self.code == errno.E2BIG or 'Argument list too long' in self.msg:
+            self.reason = 'VALUE_TOO_LONG'
+        else:
+            self.reason = 'NOT_SUPPORTED'
+
+
+class XAttrUnavailableError(DeepError):
+    pass
+
+
+class UnsafeExecExpansionError(DeepError):
+    pass
+
+
+def is_path_like(f):
+    return isinstance(f, (str, bytes, os.PathLike))
+
+def compat_datetime_from_timestamp(timestamp):
+    # Calling dt.datetime.fromtimestamp with negative timestamps throws error in Windows
+    # Ref: https://github.com/yt-dlp/yt-dlp/issues/5185, https://github.com/python/cpython/issues/81708,
+    # https://github.com/yt-dlp/yt-dlp/issues/6706#issuecomment-1496842642
+    return (dt.datetime.fromtimestamp(0, dt.timezone.utc) + dt.timedelta(seconds=timestamp))
+
+def extract_timezone(date_str, default=None):
+    m = re.search(
+        r'''(?x)
+            ^.{8,}?                                              # >=8 char non-TZ prefix, if present
+            (?P<tz>Z|                                            # just the UTC Z, or
+                (?:(?<=.\b\d{4}|\b\d{2}:\d\d)|                   # preceded by 4 digits or hh:mm or
+                   (?<!.\b[a-zA-Z]{3}|[a-zA-Z]{4}|..\b\d\d))     # not preceded by 3 alpha word or >= 4 alpha or 2 digits
+                   [ ]?                                          # optional space
+                (?P<sign>\+|-)                                   # +/-
+                (?P<hours>[0-9]{2}):?(?P<minutes>[0-9]{2})       # hh[:]mm
+            $)
+        ''', date_str)
+    timezone = None
+
+    if not m:
+        m = re.search(r'\d{1,2}:\d{1,2}(?:\.\d+)?(?P<tz>\s*[A-Z]+)$', date_str)
+        timezone = TIMEZONE_NAMES.get(m and m.group('tz').strip())
+        if timezone is not None:
+            date_str = date_str[:-len(m.group('tz'))]
+            timezone = dt.timedelta(hours=timezone)
+    else:
+        date_str = date_str[:-len(m.group('tz'))]
+        if m.group('sign'):
+            sign = 1 if m.group('sign') == '+' else -1
+            timezone = dt.timedelta(
+                hours=sign * int(m.group('hours')),
+                minutes=sign * int(m.group('minutes')))
+
+    if timezone is None and default is not NO_DEFAULT:
+        timezone = default or dt.timedelta()
+
+    return timezone, date_str
+
+
+@partial_application
+def parse_iso8601(date_str, delimiter='T', timezone=None):
+    """ Return a UNIX timestamp from the given date """
+
+    if date_str is None:
+        return None
+
+    date_str = re.sub(r'\.[0-9]+', '', date_str)
+
+    timezone, date_str = extract_timezone(date_str, timezone)
+
+    with contextlib.suppress(ValueError, TypeError):
+        date_format = f'%Y-%m-%d{delimiter}%H:%M:%S'
+        dt_ = dt.datetime.strptime(date_str, date_format) - timezone
+        return calendar.timegm(dt_.timetuple())
+
+
+def date_formats(day_first=True):
+    return DATE_FORMATS_DAY_FIRST if day_first else DATE_FORMATS_MONTH_FIRST
+
+
+def unified_strdate(date_str, day_first=True):
+    """Return a string with the date in the format YYYYMMDD"""
+
+    if date_str is None:
+        return None
+    upload_date = None
+    # Replace commas
+    date_str = date_str.replace(',', ' ')
+    # Remove AM/PM + timezone
+    date_str = re.sub(r'(?i)\s*(?:AM|PM)(?:\s+[A-Z]+)?', '', date_str)
+    _, date_str = extract_timezone(date_str)
+
+    for expression in date_formats(day_first):
+        with contextlib.suppress(ValueError):
+            upload_date = dt.datetime.strptime(date_str, expression).strftime('%Y%m%d')
+    if upload_date is None:
+        timetuple = email.utils.parsedate_tz(date_str)
+        if timetuple:
+            with contextlib.suppress(ValueError):
+                upload_date = dt.datetime(*timetuple[:6]).strftime('%Y%m%d')
+    if upload_date is not None:
+        return str(upload_date)
+
+
+@partial_application
+def unified_timestamp(date_str, day_first=True, tz_offset=0):
+    if not isinstance(date_str, str):
+        return None
+
+    date_str = re.sub(r'\s+', ' ', re.sub(
+        r'(?i)[,|]|(mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?', '', date_str))
+
+    pm_delta = 12 if re.search(r'(?i)PM', date_str) else 0
+    timezone, date_str = extract_timezone(
+        date_str, default=dt.timedelta(hours=tz_offset) if tz_offset else None)
+
+    # Remove AM/PM + timezone
+    date_str = re.sub(r'(?i)\s*(?:AM|PM)(?:\s+[A-Z]+)?', '', date_str)
+
+    # Remove unrecognized timezones from ISO 8601 alike timestamps
+    m = re.search(r'\d{1,2}:\d{1,2}(?:\.\d+)?(?P<tz>\s*[A-Z]+)$', date_str)
+    if m:
+        date_str = date_str[:-len(m.group('tz'))]
+
+    # Python only supports microseconds, so remove nanoseconds
+    m = re.search(r'^([0-9]{4,}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{6})[0-9]+$', date_str)
+    if m:
+        date_str = m.group(1)
+
+    for expression in date_formats(day_first):
+        with contextlib.suppress(ValueError):
+            dt_ = dt.datetime.strptime(date_str, expression) - timezone + dt.timedelta(hours=pm_delta)
+            return calendar.timegm(dt_.timetuple())
+
+    timetuple = email.utils.parsedate_tz(date_str)
+    if timetuple:
+        return calendar.timegm(timetuple) + pm_delta * 3600 - int(timezone.total_seconds())
+
+
+@partial_application
+def determine_ext(url, default_ext='unknown_video'):
+    if url is None or '.' not in url:
+        return default_ext
+    guess = url.partition('?')[0].rpartition('.')[2]
+    if re.match(r'^[A-Za-z0-9]+$', guess):
+        return guess
+    # Try extract ext from URLs like http://example.com/foo/bar.mp4/?download
+    elif guess.rstrip('/') in KNOWN_EXTENSIONS:
+        return guess.rstrip('/')
+    else:
+        return default_ext
+
+def datetime_from_str(date_str, precision='auto', format='%Y%m%d'):
+    R"""
+    Return a datetime object from a string.
+    Supported format:
+        (now|today|yesterday|DATE)([+-]\d+(microsecond|second|minute|hour|day|week|month|year)s?)?
+
+    @param format       strftime format of DATE
+    @param precision    Round the datetime object: auto|microsecond|second|minute|hour|day
+                        auto: round to the unit provided in date_str (if applicable).
+    """
+    auto_precision = False
+    if precision == 'auto':
+        auto_precision = True
+        precision = 'microsecond'
+    today = datetime_round(dt.datetime.now(dt.timezone.utc), precision)
+    if date_str in ('now', 'today'):
+        return today
+    if date_str == 'yesterday':
+        return today - dt.timedelta(days=1)
+    match = re.match(
+        r'(?P<start>.+)(?P<sign>[+-])(?P<time>\d+)(?P<unit>microsecond|second|minute|hour|day|week|month|year)s?',
+        date_str)
+    if match is not None:
+        start_time = datetime_from_str(match.group('start'), precision, format)
+        time = int(match.group('time')) * (-1 if match.group('sign') == '-' else 1)
+        unit = match.group('unit')
+        if unit == 'month' or unit == 'year':
+            new_date = datetime_add_months(start_time, time * 12 if unit == 'year' else time)
+            unit = 'day'
+        else:
+            if unit == 'week':
+                unit = 'day'
+                time *= 7
+            delta = dt.timedelta(**{unit + 's': time})
+            new_date = start_time + delta
+        if auto_precision:
+            return datetime_round(new_date, unit)
+        return new_date
+
+    return datetime_round(dt.datetime.strptime(date_str, format), precision)
+
+
+def date_from_str(date_str, format='%Y%m%d', strict=False):
+    R"""
+    Return a date object from a string using datetime_from_str
+
+    @param strict  Restrict allowed patterns to "YYYYMMDD" and
+                   (now|today|yesterday)(-\d+(day|week|month|year)s?)?
+    """
+    if strict and not re.fullmatch(r'\d{8}|(now|today|yesterday)(-\d+(day|week|month|year)s?)?', date_str):
+        raise ValueError(f'Invalid date format "{date_str}"')
+    return datetime_from_str(date_str, precision='microsecond', format=format).date()
+
+
+def datetime_add_months(dt_, months):
+    """Increment/Decrement a datetime object by months."""
+    month = dt_.month + months - 1
+    year = dt_.year + month // 12
+    month = month % 12 + 1
+    day = min(dt_.day, calendar.monthrange(year, month)[1])
+    return dt_.replace(year, month, day)
+
+
+def datetime_round(dt_, precision='day'):
+    """
+    Round a datetime object's time to a specific precision
+    """
+    if precision == 'microsecond':
+        return dt_
+
+    time_scale = 1_000_000
+    unit_seconds = {
+        'day': 86400,
+        'hour': 3600,
+        'minute': 60,
+        'second': 1,
+    }
+    roundto = lambda x, n: ((x + n / 2) // n) * n
+    timestamp = roundto(calendar.timegm(dt_.timetuple()) + dt_.microsecond / time_scale, unit_seconds[precision])
+    return compat_datetime_from_timestamp(timestamp)
+
+
+def hyphenate_date(date_str):
+    """
+    Convert a date in 'YYYYMMDD' format to 'YYYY-MM-DD' format"""
+    match = re.match(r'^(\d\d\d\d)(\d\d)(\d\d)$', date_str)
+    if match is not None:
+        return '-'.join(match.groups())
+    else:
+        return date_str
+
+
+class DateRange:
+    """Represents a time interval between two dates"""
+
+    def __init__(self, start=None, end=None):
+        """start and end must be strings in the format accepted by date"""
+        if start is not None:
+            self.start = date_from_str(start, strict=True)
+        else:
+            self.start = dt.datetime.min.date()
+        if end is not None:
+            self.end = date_from_str(end, strict=True)
+        else:
+            self.end = dt.datetime.max.date()
+        if self.start > self.end:
+            raise ValueError(f'Date range: "{self}" , the start date must be before the end date')
+
+    @classmethod
+    def day(cls, day):
+        """Returns a range that only contains the given day"""
+        return cls(day, day)
+
+    def __contains__(self, date):
+        """Check if the date is in the range"""
+        if not isinstance(date, dt.date):
+            date = date_from_str(date)
+        return self.start <= date <= self.end
+
+    def __repr__(self):
+        return f'{__name__}.{type(self).__name__}({self.start.isoformat()!r}, {self.end.isoformat()!r})'
+
+    def __str__(self):
+        return f'{self.start} to {self.end}'
+
+    def __eq__(self, other):
+        return (isinstance(other, DateRange)
+                and self.start == other.start and self.end == other.end)
+
+
+@functools.cache
+def system_identifier():
+    python_implementation = platform.python_implementation()
+    if python_implementation == 'PyPy' and hasattr(sys, 'pypy_version_info'):
+        python_implementation += ' version %d.%d.%d' % sys.pypy_version_info[:3]
+    libc_ver = []
+    with contextlib.suppress(OSError):  # We may not have access to the executable
+        libc_ver = platform.libc_ver()
+
+    return 'Python {} ({} {} {}) - {} ({}{})'.format(
+        platform.python_version(),
+        python_implementation,
+        platform.machine(),
+        platform.architecture()[0],
+        platform.platform(),
+        ssl.OPENSSL_VERSION,
+        format_field(join_nonempty(*libc_ver, delim=' '), None, ', %s'),
+    )
+
+
+def write_string(s, out=None, encoding=None):
+    assert isinstance(s, str)
+    out = out or sys.stderr
+    # `sys.stderr` might be `None` (Ref: https://github.com/pyinstaller/pyinstaller/pull/7217)
+    if not out:
+        return
+
+    if os.name == 'nt' and supports_terminal_sequences(out):
+        s = re.sub(r'([\r\n]+)', r' \1', s)
+
+    enc, buffer = None, out
+    # `mode` might be `None` (Ref: https://github.com/yt-dlp/yt-dlp/issues/8816)
+    if 'b' in (getattr(out, 'mode', None) or ''):
+        enc = encoding or preferredencoding()
+    elif hasattr(out, 'buffer'):
+        buffer = out.buffer
+        enc = encoding or getattr(out, 'encoding', None) or preferredencoding()
+
+    buffer.write(s.encode(enc, 'ignore') if enc else s)
+    out.flush()
+
+def format_decimal_suffix(num, fmt='%d%s', *, factor=1000):
+    """ Formats numbers with decimal sufixes like K, M, etc """
+    num, factor = float_or_none(num), float(factor)
+    if num is None or num < 0:
+        return None
+    POSSIBLE_SUFFIXES = 'kMGTPEZY'
+    exponent = 0 if num == 0 else min(int(math.log(num, factor)), len(POSSIBLE_SUFFIXES))
+    suffix = ['', *POSSIBLE_SUFFIXES][exponent]
+    if factor == 1024:
+        suffix = {'k': 'Ki', '': ''}.get(suffix, f'{suffix}i')
+    converted = num / (factor ** exponent)
+    return fmt % (converted, suffix)
+
+
+def format_bytes(bytes):
+    return format_decimal_suffix(bytes, '%.2f%sB', factor=1024) or 'N/A'
+
+
+def lookup_unit_table(unit_table, s, strict=False):
+    num_re = NUMBER_RE if strict else NUMBER_RE.replace(R'\.', '[,.]')
+    units_re = '|'.join(re.escape(u) for u in unit_table)
+    m = (re.fullmatch if strict else re.match)(
+        rf'(?P<num>{num_re})\s*(?P<unit>{units_re})\b', s)
+    if not m:
+        return None
+
+    num = float(m.group('num').replace(',', '.'))
+    mult = unit_table[m.group('unit')]
+    return round(num * mult)
+
+
+def parse_bytes(s):
+    """Parse a string indicating a byte quantity into an integer"""
+    return lookup_unit_table(
+        {u: 1024**i for i, u in enumerate(['', *'KMGTPEZY'])},
+        s.upper(), strict=True)
+
+
+def parse_filesize(s):
+    if s is None:
+        return None
+
+    # The lower-case forms are of course incorrect and unofficial,
+    # but we support those too
+    _UNIT_TABLE = {
+        'B': 1,
+        'b': 1,
+        'bytes': 1,
+        'KiB': 1024,
+        'KB': 1000,
+        'kB': 1024,
+        'Kb': 1000,
+        'kb': 1000,
+        'kilobytes': 1000,
+        'kibibytes': 1024,
+        'MiB': 1024 ** 2,
+        'MB': 1000 ** 2,
+        'mB': 1024 ** 2,
+        'Mb': 1000 ** 2,
+        'mb': 1000 ** 2,
+        'megabytes': 1000 ** 2,
+        'mebibytes': 1024 ** 2,
+        'GiB': 1024 ** 3,
+        'GB': 1000 ** 3,
+        'gB': 1024 ** 3,
+        'Gb': 1000 ** 3,
+        'gb': 1000 ** 3,
+        'gigabytes': 1000 ** 3,
+        'gibibytes': 1024 ** 3,
+        'TiB': 1024 ** 4,
+        'TB': 1000 ** 4,
+        'tB': 1024 ** 4,
+        'Tb': 1000 ** 4,
+        'tb': 1000 ** 4,
+        'terabytes': 1000 ** 4,
+        'tebibytes': 1024 ** 4,
+        'PiB': 1024 ** 5,
+        'PB': 1000 ** 5,
+        'pB': 1024 ** 5,
+        'Pb': 1000 ** 5,
+        'pb': 1000 ** 5,
+        'petabytes': 1000 ** 5,
+        'pebibytes': 1024 ** 5,
+        'EiB': 1024 ** 6,
+        'EB': 1000 ** 6,
+        'eB': 1024 ** 6,
+        'Eb': 1000 ** 6,
+        'eb': 1000 ** 6,
+        'exabytes': 1000 ** 6,
+        'exbibytes': 1024 ** 6,
+        'ZiB': 1024 ** 7,
+        'ZB': 1000 ** 7,
+        'zB': 1024 ** 7,
+        'Zb': 1000 ** 7,
+        'zb': 1000 ** 7,
+        'zettabytes': 1000 ** 7,
+        'zebibytes': 1024 ** 7,
+        'YiB': 1024 ** 8,
+        'YB': 1000 ** 8,
+        'yB': 1024 ** 8,
+        'Yb': 1000 ** 8,
+        'yb': 1000 ** 8,
+        'yottabytes': 1000 ** 8,
+        'yobibytes': 1024 ** 8,
+    }
+
+    return lookup_unit_table(_UNIT_TABLE, s)
+
+
+def parse_count(s):
+    if s is None:
+        return None
+
+    s = re.sub(r'^[^\d]+\s', '', s).strip()
+
+    if re.match(r'^[\d,.]+$', s):
+        return str_to_int(s)
+
+    _UNIT_TABLE = {
+        'k': 1000,
+        'K': 1000,
+        'm': 1000 ** 2,
+        'M': 1000 ** 2,
+        'kk': 1000 ** 2,
+        'KK': 1000 ** 2,
+        'b': 1000 ** 3,
+        'B': 1000 ** 3,
+    }
+
+    ret = lookup_unit_table(_UNIT_TABLE, s)
+    if ret is not None:
+        return ret
+
+    mobj = re.match(r'([\d,.]+)(?:$|\s)', s)
+    if mobj:
+        return str_to_int(mobj.group(1))
+
+
+@partial_application
+def parse_resolution(s, *, lenient=False, parse_fps=False):
+    if s is None:
+        return {}
+
+    if lenient:
+        mobj = re.search(r'(?P<w>\d+)\s*[xX×,]\s*(?P<h>\d+)', s)
+    else:
+        mobj = re.search(r'(?<![a-zA-Z0-9])(?P<w>\d+)\s*[xX×,]\s*(?P<h>\d+)(?![a-zA-Z0-9])', s)
+    if mobj:
+        return {
+            'width': int(mobj.group('w')),
+            'height': int(mobj.group('h')),
+        }
+
+    fps_suffix = r'(?P<fps>\d{2,3})?'
+    mobj = re.search(rf'(?<![a-zA-Z0-9])(?P<height>\d+)[pPiI]{fps_suffix}(?![a-zA-Z0-9])', s)
+    scale = 1
+    if not mobj:
+        mobj = re.search(rf'\b(?P<height>[48])[kK]{fps_suffix}\b', s)
+        scale = 540
+    if mobj:
+        res = {'height': int(mobj.group('height')) * scale}
+        if parse_fps:
+            if fps := mobj.group('fps'):
+                res['fps'] = int(fps)
+
+        return res
+
+    if lenient:
+        mobj = re.search(r'(?<!\d)(\d{2,5})w(?![a-zA-Z0-9])', s)
+        if mobj:
+            return {'width': int(mobj.group(1))}
+
+    return {}
+
+
+def parse_bitrate(s):
+    if not isinstance(s, str):
+        return
+    mobj = re.search(r'\b(\d+)\s*kbps', s)
+    if mobj:
+        return int(mobj.group(1))
+
+
+def month_by_name(name, lang='en'):
+    """ Return the number of a month by (locale-independently) English name """
+
+    month_names = MONTH_NAMES.get(lang, MONTH_NAMES['en'])
+
+    try:
+        return month_names.index(name) + 1
+    except ValueError:
+        return None
+
+
+def month_by_abbreviation(abbrev):
+    """ Return the number of a month by (locale-independently) English
+        abbreviations """
+
+    try:
+        return [s[:3] for s in ENGLISH_MONTH_NAMES].index(abbrev) + 1
+    except ValueError:
+        return None
+
+
+def fix_xml_ampersands(xml_str):
+    """Replace all the '&' by '&amp;' in XML"""
+    return re.sub(
+        r'&(?!amp;|lt;|gt;|apos;|quot;|#x[0-9a-fA-F]{,4};|#[0-9]{,4};)',
+        '&amp;',
+        xml_str)
+
+
+def setproctitle(title):
+    assert isinstance(title, str)
+
+    # Workaround for https://github.com/yt-dlp/yt-dlp/issues/4541
+    try:
+        import ctypes
+    except ImportError:
+        return
+
+    try:
+        libc = ctypes.cdll.LoadLibrary('libc.so.6')
+    except OSError:
+        return
+
+    buf = ctypes.create_string_buffer(title.encode())
+    try:
+        # PR_SET_NAME = 15      Ref: /usr/include/linux/prctl.h
+        libc.prctl(15, buf, 0, 0, 0)
+    except AttributeError:
+        return  # Strange libc, just skip this
+
+
+def remove_start(s, start):
+    return s[len(start):] if s is not None and s.startswith(start) else s
+
+
+def remove_end(s, end):
+    return s[:-len(end)] if s is not None and end and s.endswith(end) else s
+
+
+def remove_quotes(s):
+    if s is None or len(s) < 2:
+        return s
+    for quote in ('"', "'"):
+        if s[0] == quote and s[-1] == quote:
+            return s[1:-1]
+    return s
+
+
+def get_domain(url):
+    """
+    This implementation is inconsistent, but is kept for compatibility.
+    Use this only for "webpage_url_domain"
+    """
+    return remove_start(urllib.parse.urlparse(url).netloc, 'www.') or None
+
+
+def url_basename(url):
+    path = urllib.parse.urlparse(url).path
+    return path.strip('/').split('/')[-1]
+
+
+def base_url(url):
+    return re.match(r'https?://[^?#]+/', url).group()
+
+
+@partial_application
+def urljoin(base, path):
+    if isinstance(path, bytes):
+        path = path.decode()
+    if not isinstance(path, str) or not path:
+        return None
+    if re.match(r'(?:[a-zA-Z][a-zA-Z0-9+-.]*:)?//', path):
+        return path
+    if isinstance(base, bytes):
+        base = base.decode()
+    if not isinstance(base, str) or not re.match(
+            r'^(?:https?:)?//', base):
+        return None
+    return urllib.parse.urljoin(base, path)
+
+
+@partial_application
+def int_or_none(v, scale=1, default=None, get_attr=None, invscale=1, base=None):
+    if get_attr and v is not None:
+        v = getattr(v, get_attr, None)
+    if invscale == 1 and scale < 1:
+        invscale = int(1 / scale)
+        scale = 1
+    try:
+        return (int(v) if base is None else int(v, base=base)) * invscale // scale
+    except (ValueError, TypeError, OverflowError):
+        return default
+
+
+def str_or_none(v, default=None):
+    return default if v is None else str(v)
+
+
+def str_to_int(int_str):
+    """ A more relaxed version of int_or_none """
+    if isinstance(int_str, int):
+        return int_str
+    elif isinstance(int_str, str):
+        int_str = re.sub(r'[,\.\+]', '', int_str)
+        return int_or_none(int_str)
+
+
+@partial_application
+def float_or_none(v, scale=1, invscale=1, default=None):
+    if v is None:
+        return default
+    if invscale == 1 and scale < 1:
+        invscale = int(1 / scale)
+        scale = 1
+    try:
+        return float(v) * invscale / scale
+    except (ValueError, TypeError, OverflowError):
+        return default
+
+
+def bool_or_none(v, default=None):
+    return v if isinstance(v, bool) else default
+
+
+def strip_or_none(v, default=None):
+    return v.strip() if isinstance(v, str) else default
+
+
+def url_or_none(url):
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    return url if re.match(r'(?:(?:https?|rtm(?:pt?[es]?|fp)|ftps?|wss?):)?//', url) else None
+
+
+def strftime_or_none(timestamp, date_format='%Y%m%d', default=None):
+    datetime_object = None
+    try:
+        if isinstance(timestamp, (int, float)):  # unix timestamp
+            datetime_object = compat_datetime_from_timestamp(timestamp)
+        elif isinstance(timestamp, str):  # assume YYYYMMDD
+            datetime_object = dt.datetime.strptime(timestamp, '%Y%m%d')
+        date_format = re.sub(  # Support %s on windows
+            r'(?<!%)(%%)*%s', rf'\g<1>{int(datetime_object.timestamp())}', date_format)
+        return datetime_object.strftime(date_format)
+    except (ValueError, TypeError, AttributeError, OverflowError, OSError):
+        return default
+
+
+def parse_duration(s):
+    if not isinstance(s, str):
+        return None
+    s = s.strip()
+    if not s:
+        return None
+
+    days, hours, mins, secs, ms = [None] * 5
+    m = re.match(r'''(?x)
+            (?P<before_secs>
+                (?:(?:(?P<days>[0-9]+):)?(?P<hours>[0-9]+):)?(?P<mins>[0-9]+):)?
+            (?P<secs>(?(before_secs)[0-9]{1,2}|[0-9]+))
+            (?P<ms>[.:][0-9]+)?Z?$
+        ''', s)
+    if m:
+        days, hours, mins, secs, ms = m.group('days', 'hours', 'mins', 'secs', 'ms')
+    else:
+        m = re.match(
+            r'''(?ix)(?:P?
+                (?:
+                    [0-9]+\s*y(?:ears?)?,?\s*
+                )?
+                (?:
+                    [0-9]+\s*m(?:onths?)?,?\s*
+                )?
+                (?:
+                    [0-9]+\s*w(?:eeks?)?,?\s*
+                )?
+                (?:
+                    (?P<days>[0-9]+)\s*d(?:ays?)?,?\s*
+                )?
+                T)?
+                (?:
+                    (?P<hours>[0-9]+)\s*h(?:(?:ou)?rs?)?,?\s*
+                )?
+                (?:
+                    (?P<mins>[0-9]+)\s*m(?:in(?:ute)?s?)?,?\s*
+                )?
+                (?:
+                    (?P<secs>[0-9]+)(?P<ms>\.[0-9]+)?\s*s(?:ec(?:ond)?s?)?\s*
+                )?Z?$''', s)
+        if m:
+            days, hours, mins, secs, ms = m.groups()
+        else:
+            m = re.match(r'(?i)(?:(?P<hours>[0-9.]+)\s*(?:hours?)|(?P<mins>[0-9.]+)\s*(?:mins?\.?|minutes?)\s*)Z?$', s)
+            if m:
+                hours, mins = m.groups()
+            else:
+                return None
+
+    if ms:
+        ms = ms.replace(':', '.')
+    total = sum(float(part or 0) * mult for part, mult in (
+        (days, 86400), (hours, 3600), (mins, 60), (secs, 1), (ms, 1)))
+
+    return int(total) if total.is_integer() else total
+
+def uppercase_escape(s):
+    unicode_escape = codecs.getdecoder('unicode_escape')
+    return re.sub(
+        r'\\U[0-9a-fA-F]{8}',
+        lambda m: unicode_escape(m.group(0))[0],
+        s)
+
+
+def lowercase_escape(s):
+    unicode_escape = codecs.getdecoder('unicode_escape')
+    return re.sub(
+        r'\\u[0-9a-fA-F]{4}',
+        lambda m: unicode_escape(m.group(0))[0],
+        s)
+
+
+def parse_qs(url, **kwargs):
+    return urllib.parse.parse_qs(urllib.parse.urlparse(url).query, **kwargs)
+
+
+def urlencode_postdata(*args, **kargs):
+    return urllib.parse.urlencode(*args, **kargs).encode('ascii')
+
+
+@partial_application
+def update_url(url, *, query_update=None, **kwargs):
+    """Replace URL components specified by kwargs
+       @param url           str or parse url tuple
+       @param query_update  update query
+       @returns             str
+    """
+    if isinstance(url, str):
+        if not kwargs and not query_update:
+            return url
+        else:
+            url = urllib.parse.urlparse(url)
+    if query_update:
+        assert 'query' not in kwargs, 'query_update and query cannot be specified at the same time'
+        kwargs['query'] = urllib.parse.urlencode({
+            **urllib.parse.parse_qs(url.query),
+            **query_update,
+        }, True)
+    return urllib.parse.urlunparse(url._replace(**kwargs))
+
+
+@partial_application
+def update_url_query(url, query):
+    return update_url(url, query_update=query)
+
+
+def _multipart_encode_impl(data, boundary):
+    content_type = f'multipart/form-data; boundary={boundary}'
+
+    out = b''
+    for k, v in data.items():
+        out += b'--' + boundary.encode('ascii') + b'\r\n'
+        if isinstance(k, str):
+            k = k.encode()
+        if isinstance(v, str):
+            v = v.encode()
+        # RFC 2047 requires non-ASCII field names to be encoded, while RFC 7578
+        # suggests sending UTF-8 directly. Firefox sends UTF-8, too
+        content = b'Content-Disposition: form-data; name="' + k + b'"\r\n\r\n' + v + b'\r\n'
+        if boundary.encode('ascii') in content:
+            raise ValueError('Boundary overlaps with data')
+        out += content
+
+    out += b'--' + boundary.encode('ascii') + b'--\r\n'
+
+    return out, content_type
+
+
+def multipart_encode(data, boundary=None):
+    """
+    Encode a dict to RFC 7578-compliant form-data
+
+    data:
+        A dict where keys and values can be either str or bytes-like objects.
+    boundary:
+        An ASCII string to use as the boundary. If omitted, a random boundary
+        is generated.
+
+    Reference: https://tools.ietf.org/html/rfc7578
+    """
+    has_specified_boundary = boundary is not None
+
+    while True:
+        if boundary is None:
+            boundary = '---------------' + str(random.randrange(0x0fffffff, 0xffffffff))
+
+        try:
+            out, content_type = _multipart_encode_impl(data, boundary)
+            break
+        except ValueError:
+            if has_specified_boundary:
+                raise
+            boundary = None
+
+    return out, content_type
+
+
+def is_iterable_like(x, allowed_types=collections.abc.Iterable, blocked_types=NO_DEFAULT):
+    if blocked_types is NO_DEFAULT:
+        blocked_types = (str, bytes, collections.abc.Mapping)
+    return isinstance(x, allowed_types) and not isinstance(x, blocked_types)
+
+
+def variadic(x, allowed_types=NO_DEFAULT):
+    if not isinstance(allowed_types, (tuple, type)):
+        allowed_types = tuple(allowed_types)
+    return x if is_iterable_like(x, blocked_types=allowed_types) else (x, )
+
+
+def try_call(*funcs, expected_type=None, args=[], kwargs={}):
+    for f in funcs:
+        try:
+            val = f(*args, **kwargs)
+        except (AttributeError, KeyError, TypeError, IndexError, ValueError, ZeroDivisionError):
+            pass
+        else:
+            if expected_type is None or isinstance(val, expected_type):
+                return val
+
+
+def try_get(src, getter, expected_type=None):
+    return try_call(*variadic(getter), args=(src,), expected_type=expected_type)
+
+
+def filter_dict(dct, cndn=lambda _, v: v is not None):
+    return {k: v for k, v in dct.items() if cndn(k, v)}
+
+
+def merge_dicts(*dicts):
+    merged = {}
+    for a_dict in dicts:
+        for k, v in a_dict.items():
+            if ((v is not None and k not in merged)
+                    or (isinstance(v, str) and merged[k] == '')):
+                merged[k] = v
+    return merged
+
+
+def encode_compat_str(string, encoding=preferredencoding(), errors='strict'):
+    return string if isinstance(string, str) else str(string, encoding, errors)
+
+
+US_RATINGS = {
+    'G': 0,
+    'PG': 10,
+    'PG-13': 13,
+    'R': 16,
+    'NC': 18,
+}
+
+
+TV_PARENTAL_GUIDELINES = {
+    'TV-Y': 0,
+    'TV-Y7': 7,
+    'TV-G': 0,
+    'TV-PG': 0,
+    'TV-14': 14,
+    'TV-MA': 17,
+}
+
+
+def parse_age_limit(s):
+    # isinstance(False, int) is True. So type() must be used instead
+    if type(s) is int:  # noqa: E721
+        return s if 0 <= s <= 21 else None
+    elif not isinstance(s, str):
+        return None
+    m = re.match(r'^(?P<age>\d{1,2})\+?$', s)
+    if m:
+        return int(m.group('age'))
+    s = s.upper()
+    if s in US_RATINGS:
+        return US_RATINGS[s]
+    m = re.match(r'^TV[_-]?({})$'.format('|'.join(k[3:] for k in TV_PARENTAL_GUIDELINES)), s)
+    if m:
+        return TV_PARENTAL_GUIDELINES['TV-' + m.group(1)]
+    return None
+
+
+def strip_jsonp(code):
+    return re.sub(
+        r'''(?sx)^
+            (?:window\.)?(?P<func_name>[a-zA-Z0-9_.$]*)
+            (?:\s*&&\s*(?P=func_name))?
+            \s*\(\s*(?P<callback_data>.*)\);?
+            \s*?(?://[^\n]*)*$''',
+        r'\g<callback_data>', code)
+
+
+def js_to_json(code, vars={}, *, strict=False):
+    # vars is a dict of var, val pairs to substitute
+    STRING_QUOTES = '\'"`'
+    STRING_RE = '|'.join(rf'{q}(?:\\.|[^\\{q}])*{q}' for q in STRING_QUOTES)
+    COMMENT_RE = r'/\*(?:(?!\*/).)*?\*/|//[^\n]*\n'
+    SKIP_RE = fr'\s*(?:{COMMENT_RE})?\s*'
+    INTEGER_TABLE = (
+        (fr'(?s)^(0[xX][0-9a-fA-F]+){SKIP_RE}:?$', 16),
+        (fr'(?s)^(0+[0-7]+){SKIP_RE}:?$', 8),
+    )
+
+    def process_escape(match):
+        JSON_PASSTHROUGH_ESCAPES = R'"\bfnrtu'
+        escape = match.group(1) or match.group(2)
+
+        return (Rf'\{escape}' if escape in JSON_PASSTHROUGH_ESCAPES
+                else R'\u00' if escape == 'x'
+                else '' if escape == '\n'
+                else escape)
+
+    def template_substitute(match):
+        evaluated = js_to_json(match.group(1), vars, strict=strict)
+        if evaluated[0] == '"':
+            with contextlib.suppress(json.JSONDecodeError):
+                return json.loads(evaluated)
+        return evaluated
+
+    def fix_kv(m):
+        v = m.group(0)
+        if v in ('true', 'false', 'null'):
+            return v
+        elif v in ('undefined', 'void 0'):
+            return 'null'
+        elif v.startswith(('/*', '//', '!')) or v == ',':
+            return ''
+
+        if v[0] in STRING_QUOTES:
+            v = re.sub(r'(?s)\${([^}]+)}', template_substitute, v[1:-1]) if v[0] == '`' else v[1:-1]
+            escaped = re.sub(r'(?s)(")|\\(.)', process_escape, v)
+            return f'"{escaped}"'
+
+        for regex, base in INTEGER_TABLE:
+            im = re.match(regex, v)
+            if im:
+                i = int(im.group(1), base)
+                return f'"{i}":' if v.endswith(':') else str(i)
+
+        if v in vars:
+            try:
+                if not strict:
+                    json.loads(vars[v])
+            except json.JSONDecodeError:
+                return json.dumps(vars[v])
+            else:
+                return vars[v]
+
+        if not strict:
+            return f'"{v}"'
+
+        raise ValueError(f'Unknown value: {v}')
+
+    def create_map(mobj):
+        return json.dumps(dict(json.loads(js_to_json(mobj.group(1) or '[]', vars=vars))))
+
+    code = re.sub(r'(?:new\s+)?Array\((.*?)\)', r'[\g<1>]', code)
+    code = re.sub(r'new Map\((\[.*?\])?\)', create_map, code)
+    if not strict:
+        code = re.sub(rf'new Date\(({STRING_RE})\)', r'\g<1>', code)
+        code = re.sub(r'new \w+\((.*?)\)', lambda m: json.dumps(m.group(0)), code)
+        code = re.sub(r'parseInt\([^\d]+(\d+)[^\d]+\)', r'\1', code)
+        code = re.sub(r'\(function\([^)]*\)\s*\{[^}]*\}\s*\)\s*\(\s*(["\'][^)]*["\'])\s*\)', r'\1', code)
+
+    return re.sub(rf'''(?sx)
+        {STRING_RE}|
+        {COMMENT_RE}|,(?={SKIP_RE}[\]}}])|
+        void\s0|(?:(?<![0-9])[eE]|[a-df-zA-DF-Z_$])[.a-zA-Z_$0-9]*|
+        \b(?:0[xX][0-9a-fA-F]+|(?<!\.)0+[0-7]+)(?:{SKIP_RE}:)?|
+        [0-9]+(?={SKIP_RE}:)|
+        !+
+        ''', fix_kv, code)
+
+
+def qualities(quality_ids):
+    """ Get a numeric quality value out of a list of possible values """
+    quality_map = {}
+    for index, quality_id in enumerate(quality_ids):
+        quality_map.setdefault(quality_id, index)
+
+    def q(qid):
+        return quality_map.get(qid, -1)
+
+    return q
+
+
+POSTPROCESS_WHEN = ('pre_process', 'after_filter', 'video', 'before_dl', 'post_process', 'after_move', 'after_video', 'playlist')
+
+
+DEFAULT_OUTTMPL = {
+    'default': '%(title)s [%(id)s].%(ext)s',
+    'chapter': '%(title)s - %(section_number)03d %(section_title)s [%(id)s].%(ext)s',
+}
+OUTTMPL_TYPES = {
+    'chapter': None,
+    'subtitle': None,
+    'thumbnail': None,
+    'description': 'description',
+    'annotation': 'annotations.xml',
+    'infojson': 'info.json',
+    'link': None,
+    'pl_video': None,
+    'pl_thumbnail': None,
+    'pl_description': 'description',
+    'pl_infojson': 'info.json',
+}
+
+# As of [1] format syntax is:
+#  %[mapping_key][conversion_flags][minimum_width][.precision][length_modifier]type
+# 1. https://docs.python.org/2/library/stdtypes.html#string-formatting
+STR_FORMAT_RE_TMPL = r'''(?x)
+    (?<!%)(?P<prefix>(?:%%)*)
+    %
+    (?P<has_key>\((?P<key>{0})\))?
+    (?P<format>
+        (?P<conversion>[#0\-+ ]+)?
+        (?P<min_width>\d+)?
+        (?P<precision>\.\d+)?
+        (?P<len_mod>[hlL])?  # unused in python
+        {1}  # conversion type
+    )
+'''
+
+
+STR_FORMAT_TYPES = 'diouxXeEfFgGcrsa'
+
+
+def limit_length(s, length):
+    """ Add ellipses to overly long strings """
+    if s is None:
+        return None
+    ELLIPSES = '...'
+    if len(s) > length:
+        return s[:length - len(ELLIPSES)] + ELLIPSES
+    return s
+
+
+def version_tuple(v, *, lenient=False):
+    parse = int_or_none(default=-1) if lenient else int
+    return tuple(parse(e) for e in re.split(r'[-.]', v))
+
+
+def is_outdated_version(version, limit, assume_new=True):
+    if not version:
+        return not assume_new
+    try:
+        return version_tuple(version) < version_tuple(limit)
+    except ValueError:
+        return not assume_new
+
+def error_to_str(err):
+    return f'{type(err).__name__}: {err}'
+
+
+@partial_application
+def mimetype2ext(mt, default=NO_DEFAULT):
+    if not isinstance(mt, str):
+        if default is not NO_DEFAULT:
+            return default
+        return None
+
+    MAP = {
+        # video
+        '3gpp': '3gp',
+        'mp2t': 'ts',
+        'mp4': 'mp4',
+        'mpeg': 'mpeg',
+        'mpegurl': 'm3u8',
+        'quicktime': 'mov',
+        'webm': 'webm',
+        'vp9': 'vp9',
+        'video/ogg': 'ogv',
+        'x-flv': 'flv',
+        'x-m4v': 'm4v',
+        'x-matroska': 'mkv',
+        'x-mng': 'mng',
+        'x-mp4-fragmented': 'mp4',
+        'x-ms-asf': 'asf',
+        'x-ms-wmv': 'wmv',
+        'x-msvideo': 'avi',
+        'vnd.dlna.mpeg-tts': 'mpeg',
+
+        # application (streaming playlists)
+        'dash+xml': 'mpd',
+        'f4m+xml': 'f4m',
+        'hds+xml': 'f4m',
+        'vnd.apple.mpegurl': 'm3u8',
+        'vnd.ms-sstr+xml': 'ism',
+        'x-mpegurl': 'm3u8',
+
+        # audio
+        'audio/mp4': 'm4a',
+        # Per RFC 3003, audio/mpeg can be .mp1, .mp2 or .mp3.
+        # Using .mp3 as it's the most popular one
+        'audio/mpeg': 'mp3',
+        'audio/webm': 'webm',
+        'audio/x-matroska': 'mka',
+        'audio/x-mpegurl': 'm3u',
+        'aacp': 'aac',
+        'flac': 'flac',
+        'midi': 'mid',
+        'ogg': 'ogg',
+        'wav': 'wav',
+        'wave': 'wav',
+        'x-aac': 'aac',
+        'x-flac': 'flac',
+        'x-m4a': 'm4a',
+        'x-realaudio': 'ra',
+        'x-wav': 'wav',
+
+        # image
+        'avif': 'avif',
+        'bmp': 'bmp',
+        'gif': 'gif',
+        'jpeg': 'jpg',
+        'png': 'png',
+        'svg+xml': 'svg',
+        'tiff': 'tif',
+        'vnd.wap.wbmp': 'wbmp',
+        'webp': 'webp',
+        'x-icon': 'ico',
+        'x-jng': 'jng',
+        'x-ms-bmp': 'bmp',
+
+        # caption
+        'filmstrip+json': 'fs',
+        'smptett+xml': 'tt',
+        'ttaf+xml': 'dfxp',
+        'ttml+xml': 'ttml',
+        'x-ms-sami': 'sami',
+        'x-subrip': 'srt',
+        'x-srt': 'srt',
+
+        # misc
+        'gzip': 'gz',
+        'json': 'json',
+        'xml': 'xml',
+        'zip': 'zip',
+    }
+
+    mimetype = mt.partition(';')[0].strip().lower()
+    _, _, subtype = mimetype.rpartition('/')
+
+    ext = traversal.traverse_obj(MAP, mimetype, subtype, subtype.rsplit('+')[-1])
+    if ext:
+        return ext
+    elif default is not NO_DEFAULT:
+        return default
+    return subtype.replace('+', '.')
+
+
+def ext2mimetype(ext_or_url):
+    if not ext_or_url:
+        return None
+    if '.' not in ext_or_url:
+        ext_or_url = f'file.{ext_or_url}'
+    return mimetypes.guess_type(ext_or_url)[0]
+
+
+def parse_codecs(codecs_str):
+    # http://tools.ietf.org/html/rfc6381
+    if not codecs_str:
+        return {}
+    split_codecs = list(filter(None, map(
+        str.strip, codecs_str.strip().strip(',').split(','))))
+    vcodec, acodec, scodec, hdr = None, None, None, None
+    for full_codec in split_codecs:
+        full_codec = re.sub(r'^([^.]+)', lambda m: m.group(1).lower(), full_codec)
+        parts = re.sub(r'0+(?=\d)', '', full_codec).split('.')
+        if parts[0] in ('avc1', 'avc2', 'avc3', 'avc4', 'vp9', 'vp8', 'hev1', 'hev2',
+                        'h263', 'h264', 'mp4v', 'hvc1', 'av1', 'theora', 'dvh1', 'dvhe'):
+            if vcodec:
+                continue
+            vcodec = full_codec
+            if parts[0] in ('dvh1', 'dvhe'):
+                hdr = 'DV'
+            elif parts[0] == 'av1' and traversal.traverse_obj(parts, 3) == '10':
+                hdr = 'HDR10'
+            elif parts[:2] == ['vp9', '2']:
+                hdr = 'HDR10'
+        elif parts[0] in ('flac', 'mp4a', 'opus', 'vorbis', 'mp3', 'aac', 'ac-4',
+                          'ac-3', 'ec-3', 'eac3', 'dtsc', 'dtse', 'dtsh', 'dtsl'):
+            acodec = acodec or full_codec
+        elif parts[0] in ('stpp', 'wvtt'):
+            scodec = scodec or full_codec
+        else:
+            write_string(f'WARNING: Unknown codec {full_codec}\n')
+    if vcodec or acodec or scodec:
+        return {
+            'vcodec': vcodec or 'none',
+            'acodec': acodec or 'none',
+            'dynamic_range': hdr,
+            **({'scodec': scodec} if scodec is not None else {}),
+        }
+    elif len(split_codecs) == 2:
+        return {
+            'vcodec': split_codecs[0],
+            'acodec': split_codecs[1],
+        }
+    return {}
+
+
+def get_compatible_ext(*, vcodecs, acodecs, vexts, aexts, preferences=None):
+    assert len(vcodecs) == len(vexts) and len(acodecs) == len(aexts)
+
+    allow_mkv = not preferences or 'mkv' in preferences
+
+    if allow_mkv and max(len(acodecs), len(vcodecs)) > 1:
+        return 'mkv'  # TODO: any other format allows this?
+
+    # TODO: All codecs supported by parse_codecs isn't handled here
+    COMPATIBLE_CODECS = {
+        'mp4': {
+            'av1', 'hevc', 'avc1', 'mp4a', 'ac-4',  # fourcc (m3u8, mpd)
+            'h264', 'aacl', 'ec-3',  # Set in ISM
+        },
+        'webm': {
+            'av1', 'vp9', 'vp8', 'opus', 'vrbs',
+            'vp9x', 'vp8x',  # in the webm spec
+        },
+    }
+
+    sanitize_codec = functools.partial(
+        try_get, getter=lambda x: x[0].split('.')[0].replace('0', '').lower())
+    vcodec, acodec = sanitize_codec(vcodecs), sanitize_codec(acodecs)
+
+    for ext in preferences or COMPATIBLE_CODECS.keys():
+        codec_set = COMPATIBLE_CODECS.get(ext, set())
+        if ext == 'mkv' or codec_set.issuperset((vcodec, acodec)):
+            return ext
+
+    COMPATIBLE_EXTS = (
+        {'mp3', 'mp4', 'm4a', 'm4p', 'm4b', 'm4r', 'm4v', 'ismv', 'isma', 'mov'},
+        {'webm', 'weba'},
+    )
+    for ext in preferences or vexts:
+        current_exts = {ext, *vexts, *aexts}
+        if ext == 'mkv' or current_exts == {ext} or any(
+                ext_sets.issuperset(current_exts) for ext_sets in COMPATIBLE_EXTS):
+            return ext
+    return 'mkv' if allow_mkv else preferences[-1]
+
+
+def disposition_filename(headers):
+    filename = None
+    for name, value in headers.get_params(header='Content-Disposition') or ():
+        if name.lower() != 'filename':
+            continue
+        filename = value
+        if isinstance(value, tuple):  # Prefer filename* over filename
+            break
+
+    return email.utils.collapse_rfc2231_value(filename).strip() if filename is not None else None
+
+
+def urlhandle_detect_ext(url_handle, default=NO_DEFAULT):
+    headers = url_handle.headers
+
+    return (
+        determine_ext(disposition_filename(headers), default_ext=None)
+        or determine_ext(headers.get('x-amz-meta-name'), default_ext=None)
+        or headers.get('x-amz-meta-file-type')
+        or mimetype2ext(headers.get('Content-Type'), default=default))
+
+
+def encode_data_uri(data, mime_type):
+    return 'data:{};base64,{}'.format(mime_type, base64.b64encode(data).decode('ascii'))
+
+
+def age_restricted(content_limit, age_limit):
+    """ Returns True iff the content should be blocked """
+
+    if age_limit is None:  # No limit set
+        return False
+    if content_limit is None:
+        return False  # Content available for everyone
+    return age_limit < content_limit
+
+
+# List of known byte-order-marks (BOM)
+BOMS = [
+    (b'\xef\xbb\xbf', 'utf-8'),
+    (b'\x00\x00\xfe\xff', 'utf-32-be'),
+    (b'\xff\xfe\x00\x00', 'utf-32-le'),
+    (b'\xff\xfe', 'utf-16-le'),
+    (b'\xfe\xff', 'utf-16-be'),
+]
+
+
+def is_html(first_bytes):
+    """ Detect whether a file contains HTML by examining its first bytes. """
+
+    encoding = 'utf-8'
+    for bom, enc in BOMS:
+        while first_bytes.startswith(bom):
+            encoding, first_bytes = enc, first_bytes[len(bom):]
+
+    return re.match(r'\s*<', first_bytes.decode(encoding, 'replace'))
+
+
+def determine_protocol(info_dict):
+    protocol = info_dict.get('protocol')
+    if protocol is not None:
+        return protocol
+
+    url = sanitize_url(info_dict['url'])
+    if url.startswith('rtmp'):
+        return 'rtmp'
+
+    ext = determine_ext(url)
+    if ext == 'm3u8':
+        return 'm3u8' if info_dict.get('is_live') else 'm3u8_native'
+    elif ext == 'f4m':
+        return 'f4m'
+
+    return urllib.parse.urlparse(url).scheme
+
+def parse_dfxp_time_expr(time_expr):
+    if not time_expr:
+        return
+
+    mobj = re.match(rf'^(?P<time_offset>{NUMBER_RE})s?$', time_expr)
+    if mobj:
+        return float(mobj.group('time_offset'))
+
+    mobj = re.match(r'^(\d+):(\d\d):(\d\d(?:(?:\.|:)\d+)?)$', time_expr)
+    if mobj:
+        return 3600 * int(mobj.group(1)) + 60 * int(mobj.group(2)) + float(mobj.group(3).replace(':', '.'))
+
+
+def srt_subtitles_timecode(seconds):
+    return '%02d:%02d:%02d,%03d' % timetuple_from_msec(seconds * 1000)
+
+
+def ass_subtitles_timecode(seconds):
+    time = timetuple_from_msec(seconds * 1000)
+    return '%01d:%02d:%02d.%02d' % (*time[:-1], time.milliseconds / 10)
+
+
+def dfxp2srt(dfxp_data):
+    """
+    @param dfxp_data A bytes-like object containing DFXP data
+    @returns A string containing the converted SRT data
+    """
+    LEGACY_NAMESPACES = (
+        (b'http://www.w3.org/ns/ttml', [
+            b'http://www.w3.org/2004/11/ttaf1',
+            b'http://www.w3.org/2006/04/ttaf1',
+            b'http://www.w3.org/2006/10/ttaf1',
+        ]),
+        (b'http://www.w3.org/ns/ttml#styling', [
+            b'http://www.w3.org/ns/ttml#style',
+        ]),
+    )
+
+    SUPPORTED_STYLING = [
+        'color',
+        'fontFamily',
+        'fontSize',
+        'fontStyle',
+        'fontWeight',
+        'textDecoration',
+    ]
+
+    _x = functools.partial(xpath_with_ns, ns_map={
+        'xml': 'http://www.w3.org/XML/1998/namespace',
+        'ttml': 'http://www.w3.org/ns/ttml',
+        'tts': 'http://www.w3.org/ns/ttml#styling',
+    })
+
+    styles = {}
+    default_style = {}
+
+    class TTMLPElementParser:
+        _out = ''
+        _unclosed_elements = []
+        _applied_styles = []
+
+        def start(self, tag, attrib):
+            if tag in (_x('ttml:br'), 'br'):
+                self._out += '\n'
+            else:
+                unclosed_elements = []
+                style = {}
+                element_style_id = attrib.get('style')
+                if default_style:
+                    style.update(default_style)
+                if element_style_id:
+                    style.update(styles.get(element_style_id, {}))
+                for prop in SUPPORTED_STYLING:
+                    prop_val = attrib.get(_x('tts:' + prop))
+                    if prop_val:
+                        style[prop] = prop_val
+                if style:
+                    font = ''
+                    for k, v in sorted(style.items()):
+                        if self._applied_styles and self._applied_styles[-1].get(k) == v:
+                            continue
+                        if k == 'color':
+                            font += f' color="{v}"'
+                        elif k == 'fontSize':
+                            font += f' size="{v}"'
+                        elif k == 'fontFamily':
+                            font += f' face="{v}"'
+                        elif k == 'fontWeight' and v == 'bold':
+                            self._out += '<b>'
+                            unclosed_elements.append('b')
+                        elif k == 'fontStyle' and v == 'italic':
+                            self._out += '<i>'
+                            unclosed_elements.append('i')
+                        elif k == 'textDecoration' and v == 'underline':
+                            self._out += '<u>'
+                            unclosed_elements.append('u')
+                    if font:
+                        self._out += '<font' + font + '>'
+                        unclosed_elements.append('font')
+                    applied_style = {}
+                    if self._applied_styles:
+                        applied_style.update(self._applied_styles[-1])
+                    applied_style.update(style)
+                    self._applied_styles.append(applied_style)
+                self._unclosed_elements.append(unclosed_elements)
+
+        def end(self, tag):
+            if tag not in (_x('ttml:br'), 'br'):
+                unclosed_elements = self._unclosed_elements.pop()
+                for element in reversed(unclosed_elements):
+                    self._out += f'</{element}>'
+                if unclosed_elements and self._applied_styles:
+                    self._applied_styles.pop()
+
+        def data(self, data):
+            self._out += data
+
+        def close(self):
+            return self._out.strip()
+
+    # Fix UTF-8 encoded file wrongly marked as UTF-16. See https://github.com/yt-dlp/yt-dlp/issues/6543#issuecomment-1477169870
+    # This will not trigger false positives since only UTF-8 text is being replaced
+    dfxp_data = dfxp_data.replace(b'encoding=\'UTF-16\'', b'encoding=\'UTF-8\'')
+
+    def parse_node(node):
+        target = TTMLPElementParser()
+        parser = xml.etree.ElementTree.XMLParser(target=target)
+        parser.feed(xml.etree.ElementTree.tostring(node))
+        return parser.close()
+
+    for k, v in LEGACY_NAMESPACES:
+        for ns in v:
+            dfxp_data = dfxp_data.replace(ns, k)
+
+    dfxp = compat_etree_fromstring(dfxp_data)
+    out = []
+    paras = dfxp.findall(_x('.//ttml:p')) or dfxp.findall('.//p')
+
+    if not paras:
+        raise ValueError('Invalid dfxp/TTML subtitle')
+
+    repeat = False
+    while True:
+        for style in dfxp.findall(_x('.//ttml:style')):
+            style_id = style.get('id') or style.get(_x('xml:id'))
+            if not style_id:
+                continue
+            parent_style_id = style.get('style')
+            if parent_style_id:
+                if parent_style_id not in styles:
+                    repeat = True
+                    continue
+                styles[style_id] = styles[parent_style_id].copy()
+            for prop in SUPPORTED_STYLING:
+                prop_val = style.get(_x('tts:' + prop))
+                if prop_val:
+                    styles.setdefault(style_id, {})[prop] = prop_val
+        if repeat:
+            repeat = False
+        else:
+            break
+
+    for p in ('body', 'div'):
+        ele = xpath_element(dfxp, [_x('.//ttml:' + p), './/' + p])
+        if ele is None:
+            continue
+        style = styles.get(ele.get('style'))
+        if not style:
+            continue
+        default_style.update(style)
+
+    for para, index in zip(paras, itertools.count(1), strict=False):
+        begin_time = parse_dfxp_time_expr(para.attrib.get('begin'))
+        end_time = parse_dfxp_time_expr(para.attrib.get('end'))
+        dur = parse_dfxp_time_expr(para.attrib.get('dur'))
+        if begin_time is None:
+            continue
+        if not end_time:
+            if not dur:
+                continue
+            end_time = begin_time + dur
+        out.append('%d\n%s --> %s\n%s\n\n' % (
+            index,
+            srt_subtitles_timecode(begin_time),
+            srt_subtitles_timecode(end_time),
+            parse_node(para)))
+
+    return ''.join(out)
+
+
+def cli_option(params, command_option, param, separator=None):
+    param = params.get(param)
+    return ([] if param is None
+            else [command_option, str(param)] if separator is None
+            else [f'{command_option}{separator}{param}'])
+
+
+def cli_bool_option(params, command_option, param, true_value='true', false_value='false', separator=None):
+    param = params.get(param)
+    assert param in (True, False, None)
+    return cli_option({True: true_value, False: false_value}, command_option, param, separator)
+
+
+def cli_valueless_option(params, command_option, param, expected_value=True):
+    return [command_option] if params.get(param) == expected_value else []
+
+
+def cli_configuration_args(argdict, keys, default=[], use_compat=True):
+    if isinstance(argdict, (list, tuple)):  # for backward compatibility
+        if use_compat:
+            return argdict
+        else:
+            argdict = None
+    if argdict is None:
+        return default
+    assert isinstance(argdict, dict)
+
+    assert isinstance(keys, (list, tuple))
+    for key_list in keys:
+        arg_list = list(filter(
+            lambda x: x is not None,
+            [argdict.get(key.lower()) for key in variadic(key_list)]))
+        if arg_list:
+            return [arg for args in arg_list for arg in args]
+    return default
+
+
+def _configuration_args(main_key, argdict, exe, keys=None, default=[], use_compat=True):
+    main_key, exe = main_key.lower(), exe.lower()
+    root_key = exe if main_key == exe else f'{main_key}+{exe}'
+    keys = [f'{root_key}{k}' for k in (keys or [''])]
+    if root_key in keys:
+        if main_key != exe:
+            keys.append((main_key, exe))
+        keys.append('default')
+    else:
+        use_compat = False
+    return cli_configuration_args(argdict, keys, default, use_compat)
+
+
+class ISO639Utils:
+    # See http://www.loc.gov/standards/iso639-2/ISO-639-2_utf-8.txt
+    _lang_map = {
+        'aa': 'aar',
+        'ab': 'abk',
+        'ae': 'ave',
+        'af': 'afr',
+        'ak': 'aka',
+        'am': 'amh',
+        'an': 'arg',
+        'ar': 'ara',
+        'as': 'asm',
+        'av': 'ava',
+        'ay': 'aym',
+        'az': 'aze',
+        'ba': 'bak',
+        'be': 'bel',
+        'bg': 'bul',
+        'bh': 'bih',
+        'bi': 'bis',
+        'bm': 'bam',
+        'bn': 'ben',
+        'bo': 'bod',
+        'br': 'bre',
+        'bs': 'bos',
+        'ca': 'cat',
+        'ce': 'che',
+        'ch': 'cha',
+        'co': 'cos',
+        'cr': 'cre',
+        'cs': 'ces',
+        'cu': 'chu',
+        'cv': 'chv',
+        'cy': 'cym',
+        'da': 'dan',
+        'de': 'deu',
+        'dv': 'div',
+        'dz': 'dzo',
+        'ee': 'ewe',
+        'el': 'ell',
+        'en': 'eng',
+        'eo': 'epo',
+        'es': 'spa',
+        'et': 'est',
+        'eu': 'eus',
+        'fa': 'fas',
+        'ff': 'ful',
+        'fi': 'fin',
+        'fj': 'fij',
+        'fo': 'fao',
+        'fr': 'fra',
+        'fy': 'fry',
+        'ga': 'gle',
+        'gd': 'gla',
+        'gl': 'glg',
+        'gn': 'grn',
+        'gu': 'guj',
+        'gv': 'glv',
+        'ha': 'hau',
+        'he': 'heb',
+        'iw': 'heb',  # Replaced by he in 1989 revision
+        'hi': 'hin',
+        'ho': 'hmo',
+        'hr': 'hrv',
+        'ht': 'hat',
+        'hu': 'hun',
+        'hy': 'hye',
+        'hz': 'her',
+        'ia': 'ina',
+        'id': 'ind',
+        'in': 'ind',  # Replaced by id in 1989 revision
+        'ie': 'ile',
+        'ig': 'ibo',
+        'ii': 'iii',
+        'ik': 'ipk',
+        'io': 'ido',
+        'is': 'isl',
+        'it': 'ita',
+        'iu': 'iku',
+        'ja': 'jpn',
+        'jv': 'jav',
+        'ka': 'kat',
+        'kg': 'kon',
+        'ki': 'kik',
+        'kj': 'kua',
+        'kk': 'kaz',
+        'kl': 'kal',
+        'km': 'khm',
+        'kn': 'kan',
+        'ko': 'kor',
+        'kr': 'kau',
+        'ks': 'kas',
+        'ku': 'kur',
+        'kv': 'kom',
+        'kw': 'cor',
+        'ky': 'kir',
+        'la': 'lat',
+        'lb': 'ltz',
+        'lg': 'lug',
+        'li': 'lim',
+        'ln': 'lin',
+        'lo': 'lao',
+        'lt': 'lit',
+        'lu': 'lub',
+        'lv': 'lav',
+        'mg': 'mlg',
+        'mh': 'mah',
+        'mi': 'mri',
+        'mk': 'mkd',
+        'ml': 'mal',
+        'mn': 'mon',
+        'mr': 'mar',
+        'ms': 'msa',
+        'mt': 'mlt',
+        'my': 'mya',
+        'na': 'nau',
+        'nb': 'nob',
+        'nd': 'nde',
+        'ne': 'nep',
+        'ng': 'ndo',
+        'nl': 'nld',
+        'nn': 'nno',
+        'no': 'nor',
+        'nr': 'nbl',
+        'nv': 'nav',
+        'ny': 'nya',
+        'oc': 'oci',
+        'oj': 'oji',
+        'om': 'orm',
+        'or': 'ori',
+        'os': 'oss',
+        'pa': 'pan',
+        'pe': 'per',
+        'pi': 'pli',
+        'pl': 'pol',
+        'ps': 'pus',
+        'pt': 'por',
+        'qu': 'que',
+        'rm': 'roh',
+        'rn': 'run',
+        'ro': 'ron',
+        'ru': 'rus',
+        'rw': 'kin',
+        'sa': 'san',
+        'sc': 'srd',
+        'sd': 'snd',
+        'se': 'sme',
+        'sg': 'sag',
+        'si': 'sin',
+        'sk': 'slk',
+        'sl': 'slv',
+        'sm': 'smo',
+        'sn': 'sna',
+        'so': 'som',
+        'sq': 'sqi',
+        'sr': 'srp',
+        'ss': 'ssw',
+        'st': 'sot',
+        'su': 'sun',
+        'sv': 'swe',
+        'sw': 'swa',
+        'ta': 'tam',
+        'te': 'tel',
+        'tg': 'tgk',
+        'th': 'tha',
+        'ti': 'tir',
+        'tk': 'tuk',
+        'tl': 'tgl',
+        'tn': 'tsn',
+        'to': 'ton',
+        'tr': 'tur',
+        'ts': 'tso',
+        'tt': 'tat',
+        'tw': 'twi',
+        'ty': 'tah',
+        'ug': 'uig',
+        'uk': 'ukr',
+        'ur': 'urd',
+        'uz': 'uzb',
+        've': 'ven',
+        'vi': 'vie',
+        'vo': 'vol',
+        'wa': 'wln',
+        'wo': 'wol',
+        'xh': 'xho',
+        'yi': 'yid',
+        'ji': 'yid',  # Replaced by yi in 1989 revision
+        'yo': 'yor',
+        'za': 'zha',
+        'zh': 'zho',
+        'zu': 'zul',
+    }
+
+    @classmethod
+    def short2long(cls, code):
+        """Convert language code from ISO 639-1 to ISO 639-2/T"""
+        return cls._lang_map.get(code[:2])
+
+    @classmethod
+    def long2short(cls, code):
+        """Convert language code from ISO 639-2/T to ISO 639-1"""
+        for short_name, long_name in cls._lang_map.items():
+            if long_name == code:
+                return short_name
+
+
+class ISO3166Utils:
+    # From http://data.okfn.org/data/core/country-list
+    _country_map = {
+        'AF': 'Afghanistan',
+        'AX': 'Åland Islands',
+        'AL': 'Albania',
+        'DZ': 'Algeria',
+        'AS': 'American Samoa',
+        'AD': 'Andorra',
+        'AO': 'Angola',
+        'AI': 'Anguilla',
+        'AQ': 'Antarctica',
+        'AG': 'Antigua and Barbuda',
+        'AR': 'Argentina',
+        'AM': 'Armenia',
+        'AW': 'Aruba',
+        'AU': 'Australia',
+        'AT': 'Austria',
+        'AZ': 'Azerbaijan',
+        'BS': 'Bahamas',
+        'BH': 'Bahrain',
+        'BD': 'Bangladesh',
+        'BB': 'Barbados',
+        'BY': 'Belarus',
+        'BE': 'Belgium',
+        'BZ': 'Belize',
+        'BJ': 'Benin',
+        'BM': 'Bermuda',
+        'BT': 'Bhutan',
+        'BO': 'Bolivia, Plurinational State of',
+        'BQ': 'Bonaire, Sint Eustatius and Saba',
+        'BA': 'Bosnia and Herzegovina',
+        'BW': 'Botswana',
+        'BV': 'Bouvet Island',
+        'BR': 'Brazil',
+        'IO': 'British Indian Ocean Territory',
+        'BN': 'Brunei Darussalam',
+        'BG': 'Bulgaria',
+        'BF': 'Burkina Faso',
+        'BI': 'Burundi',
+        'KH': 'Cambodia',
+        'CM': 'Cameroon',
+        'CA': 'Canada',
+        'CV': 'Cape Verde',
+        'KY': 'Cayman Islands',
+        'CF': 'Central African Republic',
+        'TD': 'Chad',
+        'CL': 'Chile',
+        'CN': 'China',
+        'CX': 'Christmas Island',
+        'CC': 'Cocos (Keeling) Islands',
+        'CO': 'Colombia',
+        'KM': 'Comoros',
+        'CG': 'Congo',
+        'CD': 'Congo, the Democratic Republic of the',
+        'CK': 'Cook Islands',
+        'CR': 'Costa Rica',
+        'CI': 'Côte d\'Ivoire',
+        'HR': 'Croatia',
+        'CU': 'Cuba',
+        'CW': 'Curaçao',
+        'CY': 'Cyprus',
+        'CZ': 'Czech Republic',
+        'DK': 'Denmark',
+        'DJ': 'Djibouti',
+        'DM': 'Dominica',
+        'DO': 'Dominican Republic',
+        'EC': 'Ecuador',
+        'EG': 'Egypt',
+        'SV': 'El Salvador',
+        'GQ': 'Equatorial Guinea',
+        'ER': 'Eritrea',
+        'EE': 'Estonia',
+        'ET': 'Ethiopia',
+        'FK': 'Falkland Islands (Malvinas)',
+        'FO': 'Faroe Islands',
+        'FJ': 'Fiji',
+        'FI': 'Finland',
+        'FR': 'France',
+        'GF': 'French Guiana',
+        'PF': 'French Polynesia',
+        'TF': 'French Southern Territories',
+        'GA': 'Gabon',
+        'GM': 'Gambia',
+        'GE': 'Georgia',
+        'DE': 'Germany',
+        'GH': 'Ghana',
+        'GI': 'Gibraltar',
+        'GR': 'Greece',
+        'GL': 'Greenland',
+        'GD': 'Grenada',
+        'GP': 'Guadeloupe',
+        'GU': 'Guam',
+        'GT': 'Guatemala',
+        'GG': 'Guernsey',
+        'GN': 'Guinea',
+        'GW': 'Guinea-Bissau',
+        'GY': 'Guyana',
+        'HT': 'Haiti',
+        'HM': 'Heard Island and McDonald Islands',
+        'VA': 'Holy See (Vatican City State)',
+        'HN': 'Honduras',
+        'HK': 'Hong Kong',
+        'HU': 'Hungary',
+        'IS': 'Iceland',
+        'IN': 'India',
+        'ID': 'Indonesia',
+        'IR': 'Iran, Islamic Republic of',
+        'IQ': 'Iraq',
+        'IE': 'Ireland',
+        'IM': 'Isle of Man',
+        'IL': 'Israel',
+        'IT': 'Italy',
+        'JM': 'Jamaica',
+        'JP': 'Japan',
+        'JE': 'Jersey',
+        'JO': 'Jordan',
+        'KZ': 'Kazakhstan',
+        'KE': 'Kenya',
+        'KI': 'Kiribati',
+        'KP': 'Korea, Democratic People\'s Republic of',
+        'KR': 'Korea, Republic of',
+        'KW': 'Kuwait',
+        'KG': 'Kyrgyzstan',
+        'LA': 'Lao People\'s Democratic Republic',
+        'LV': 'Latvia',
+        'LB': 'Lebanon',
+        'LS': 'Lesotho',
+        'LR': 'Liberia',
+        'LY': 'Libya',
+        'LI': 'Liechtenstein',
+        'LT': 'Lithuania',
+        'LU': 'Luxembourg',
+        'MO': 'Macao',
+        'MK': 'Macedonia, the Former Yugoslav Republic of',
+        'MG': 'Madagascar',
+        'MW': 'Malawi',
+        'MY': 'Malaysia',
+        'MV': 'Maldives',
+        'ML': 'Mali',
+        'MT': 'Malta',
+        'MH': 'Marshall Islands',
+        'MQ': 'Martinique',
+        'MR': 'Mauritania',
+        'MU': 'Mauritius',
+        'YT': 'Mayotte',
+        'MX': 'Mexico',
+        'FM': 'Micronesia, Federated States of',
+        'MD': 'Moldova, Republic of',
+        'MC': 'Monaco',
+        'MN': 'Mongolia',
+        'ME': 'Montenegro',
+        'MS': 'Montserrat',
+        'MA': 'Morocco',
+        'MZ': 'Mozambique',
+        'MM': 'Myanmar',
+        'NA': 'Namibia',
+        'NR': 'Nauru',
+        'NP': 'Nepal',
+        'NL': 'Netherlands',
+        'NC': 'New Caledonia',
+        'NZ': 'New Zealand',
+        'NI': 'Nicaragua',
+        'NE': 'Niger',
+        'NG': 'Nigeria',
+        'NU': 'Niue',
+        'NF': 'Norfolk Island',
+        'MP': 'Northern Mariana Islands',
+        'NO': 'Norway',
+        'OM': 'Oman',
+        'PK': 'Pakistan',
+        'PW': 'Palau',
+        'PS': 'Palestine, State of',
+        'PA': 'Panama',
+        'PG': 'Papua New Guinea',
+        'PY': 'Paraguay',
+        'PE': 'Peru',
+        'PH': 'Philippines',
+        'PN': 'Pitcairn',
+        'PL': 'Poland',
+        'PT': 'Portugal',
+        'PR': 'Puerto Rico',
+        'QA': 'Qatar',
+        'RE': 'Réunion',
+        'RO': 'Romania',
+        'RU': 'Russian Federation',
+        'RW': 'Rwanda',
+        'BL': 'Saint Barthélemy',
+        'SH': 'Saint Helena, Ascension and Tristan da Cunha',
+        'KN': 'Saint Kitts and Nevis',
+        'LC': 'Saint Lucia',
+        'MF': 'Saint Martin (French part)',
+        'PM': 'Saint Pierre and Miquelon',
+        'VC': 'Saint Vincent and the Grenadines',
+        'WS': 'Samoa',
+        'SM': 'San Marino',
+        'ST': 'Sao Tome and Principe',
+        'SA': 'Saudi Arabia',
+        'SN': 'Senegal',
+        'RS': 'Serbia',
+        'SC': 'Seychelles',
+        'SL': 'Sierra Leone',
+        'SG': 'Singapore',
+        'SX': 'Sint Maarten (Dutch part)',
+        'SK': 'Slovakia',
+        'SI': 'Slovenia',
+        'SB': 'Solomon Islands',
+        'SO': 'Somalia',
+        'ZA': 'South Africa',
+        'GS': 'South Georgia and the South Sandwich Islands',
+        'SS': 'South Sudan',
+        'ES': 'Spain',
+        'LK': 'Sri Lanka',
+        'SD': 'Sudan',
+        'SR': 'Suriname',
+        'SJ': 'Svalbard and Jan Mayen',
+        'SZ': 'Swaziland',
+        'SE': 'Sweden',
+        'CH': 'Switzerland',
+        'SY': 'Syrian Arab Republic',
+        'TW': 'Taiwan, Province of China',
+        'TJ': 'Tajikistan',
+        'TZ': 'Tanzania, United Republic of',
+        'TH': 'Thailand',
+        'TL': 'Timor-Leste',
+        'TG': 'Togo',
+        'TK': 'Tokelau',
+        'TO': 'Tonga',
+        'TT': 'Trinidad and Tobago',
+        'TN': 'Tunisia',
+        'TR': 'Turkey',
+        'TM': 'Turkmenistan',
+        'TC': 'Turks and Caicos Islands',
+        'TV': 'Tuvalu',
+        'UG': 'Uganda',
+        'UA': 'Ukraine',
+        'AE': 'United Arab Emirates',
+        'GB': 'United Kingdom',
+        'US': 'United States',
+        'UM': 'United States Minor Outlying Islands',
+        'UY': 'Uruguay',
+        'UZ': 'Uzbekistan',
+        'VU': 'Vanuatu',
+        'VE': 'Venezuela, Bolivarian Republic of',
+        'VN': 'Viet Nam',
+        'VG': 'Virgin Islands, British',
+        'VI': 'Virgin Islands, U.S.',
+        'WF': 'Wallis and Futuna',
+        'EH': 'Western Sahara',
+        'YE': 'Yemen',
+        'ZM': 'Zambia',
+        'ZW': 'Zimbabwe',
+        # Not ISO 3166 codes, but used for IP blocks
+        'AP': 'Asia/Pacific Region',
+        'EU': 'Europe',
+    }
+
+    @classmethod
+    def short2full(cls, code):
+        """Convert an ISO 3166-2 country code to the corresponding full name"""
+        return cls._country_map.get(code.upper())
+
+
+class GeoUtils:
+    # Major IPv4 address blocks per country
+    _country_ip_map = {
+        'AD': '46.172.224.0/19',
+        'AE': '94.200.0.0/13',
+        'AF': '149.54.0.0/17',
+        'AG': '209.59.64.0/18',
+        'AI': '204.14.248.0/21',
+        'AL': '46.99.0.0/16',
+        'AM': '46.70.0.0/15',
+        'AO': '105.168.0.0/13',
+        'AP': '182.50.184.0/21',
+        'AQ': '23.154.160.0/24',
+        'AR': '181.0.0.0/12',
+        'AS': '202.70.112.0/20',
+        'AT': '77.116.0.0/14',
+        'AU': '1.128.0.0/11',
+        'AW': '181.41.0.0/18',
+        'AX': '185.217.4.0/22',
+        'AZ': '5.197.0.0/16',
+        'BA': '31.176.128.0/17',
+        'BB': '65.48.128.0/17',
+        'BD': '114.130.0.0/16',
+        'BE': '57.0.0.0/8',
+        'BF': '102.178.0.0/15',
+        'BG': '95.42.0.0/15',
+        'BH': '37.131.0.0/17',
+        'BI': '154.117.192.0/18',
+        'BJ': '137.255.0.0/16',
+        'BL': '185.212.72.0/23',
+        'BM': '196.12.64.0/18',
+        'BN': '156.31.0.0/16',
+        'BO': '161.56.0.0/16',
+        'BQ': '161.0.80.0/20',
+        'BR': '191.128.0.0/12',
+        'BS': '24.51.64.0/18',
+        'BT': '119.2.96.0/19',
+        'BW': '168.167.0.0/16',
+        'BY': '178.120.0.0/13',
+        'BZ': '179.42.192.0/18',
+        'CA': '99.224.0.0/11',
+        'CD': '41.243.0.0/16',
+        'CF': '197.242.176.0/21',
+        'CG': '160.113.0.0/16',
+        'CH': '85.0.0.0/13',
+        'CI': '102.136.0.0/14',
+        'CK': '202.65.32.0/19',
+        'CL': '152.172.0.0/14',
+        'CM': '102.244.0.0/14',
+        'CN': '36.128.0.0/10',
+        'CO': '181.240.0.0/12',
+        'CR': '201.192.0.0/12',
+        'CU': '152.206.0.0/15',
+        'CV': '165.90.96.0/19',
+        'CW': '190.88.128.0/17',
+        'CY': '31.153.0.0/16',
+        'CZ': '88.100.0.0/14',
+        'DE': '53.0.0.0/8',
+        'DJ': '197.241.0.0/17',
+        'DK': '87.48.0.0/12',
+        'DM': '192.243.48.0/20',
+        'DO': '152.166.0.0/15',
+        'DZ': '41.96.0.0/12',
+        'EC': '186.68.0.0/15',
+        'EE': '90.190.0.0/15',
+        'EG': '156.160.0.0/11',
+        'ER': '196.200.96.0/20',
+        'ES': '88.0.0.0/11',
+        'ET': '196.188.0.0/14',
+        'EU': '2.16.0.0/13',
+        'FI': '91.152.0.0/13',
+        'FJ': '144.120.0.0/16',
+        'FK': '80.73.208.0/21',
+        'FM': '119.252.112.0/20',
+        'FO': '88.85.32.0/19',
+        'FR': '90.0.0.0/9',
+        'GA': '41.158.0.0/15',
+        'GB': '25.0.0.0/8',
+        'GD': '74.122.88.0/21',
+        'GE': '31.146.0.0/16',
+        'GF': '161.22.64.0/18',
+        'GG': '62.68.160.0/19',
+        'GH': '154.160.0.0/12',
+        'GI': '95.164.0.0/16',
+        'GL': '88.83.0.0/19',
+        'GM': '160.182.0.0/15',
+        'GN': '197.149.192.0/18',
+        'GP': '104.250.0.0/19',
+        'GQ': '105.235.224.0/20',
+        'GR': '94.64.0.0/13',
+        'GT': '168.234.0.0/16',
+        'GU': '168.123.0.0/16',
+        'GW': '197.214.80.0/20',
+        'GY': '181.41.64.0/18',
+        'HK': '113.252.0.0/14',
+        'HN': '181.210.0.0/16',
+        'HR': '93.136.0.0/13',
+        'HT': '148.102.128.0/17',
+        'HU': '84.0.0.0/14',
+        'ID': '39.192.0.0/10',
+        'IE': '87.32.0.0/12',
+        'IL': '79.176.0.0/13',
+        'IM': '5.62.80.0/20',
+        'IN': '117.192.0.0/10',
+        'IO': '203.83.48.0/21',
+        'IQ': '37.236.0.0/14',
+        'IR': '2.176.0.0/12',
+        'IS': '82.221.0.0/16',
+        'IT': '79.0.0.0/10',
+        'JE': '87.244.64.0/18',
+        'JM': '72.27.0.0/17',
+        'JO': '176.29.0.0/16',
+        'JP': '133.0.0.0/8',
+        'KE': '105.48.0.0/12',
+        'KG': '158.181.128.0/17',
+        'KH': '36.37.128.0/17',
+        'KI': '103.25.140.0/22',
+        'KM': '197.255.224.0/20',
+        'KN': '198.167.192.0/19',
+        'KP': '175.45.176.0/22',
+        'KR': '175.192.0.0/10',
+        'KW': '37.36.0.0/14',
+        'KY': '64.96.0.0/15',
+        'KZ': '2.72.0.0/13',
+        'LA': '115.84.64.0/18',
+        'LB': '178.135.0.0/16',
+        'LC': '24.92.144.0/20',
+        'LI': '82.117.0.0/19',
+        'LK': '112.134.0.0/15',
+        'LR': '102.183.0.0/16',
+        'LS': '129.232.0.0/17',
+        'LT': '78.56.0.0/13',
+        'LU': '188.42.0.0/16',
+        'LV': '46.109.0.0/16',
+        'LY': '41.252.0.0/14',
+        'MA': '105.128.0.0/11',
+        'MC': '88.209.64.0/18',
+        'MD': '37.246.0.0/16',
+        'ME': '178.175.0.0/17',
+        'MF': '74.112.232.0/21',
+        'MG': '154.126.0.0/17',
+        'MH': '117.103.88.0/21',
+        'MK': '77.28.0.0/15',
+        'ML': '154.118.128.0/18',
+        'MM': '37.111.0.0/17',
+        'MN': '49.0.128.0/17',
+        'MO': '60.246.0.0/16',
+        'MP': '202.88.64.0/20',
+        'MQ': '109.203.224.0/19',
+        'MR': '41.188.64.0/18',
+        'MS': '208.90.112.0/22',
+        'MT': '46.11.0.0/16',
+        'MU': '105.16.0.0/12',
+        'MV': '27.114.128.0/18',
+        'MW': '102.70.0.0/15',
+        'MX': '187.192.0.0/11',
+        'MY': '175.136.0.0/13',
+        'MZ': '197.218.0.0/15',
+        'NA': '41.182.0.0/16',
+        'NC': '101.101.0.0/18',
+        'NE': '197.214.0.0/18',
+        'NF': '203.17.240.0/22',
+        'NG': '105.112.0.0/12',
+        'NI': '186.76.0.0/15',
+        'NL': '145.96.0.0/11',
+        'NO': '84.208.0.0/13',
+        'NP': '36.252.0.0/15',
+        'NR': '203.98.224.0/19',
+        'NU': '49.156.48.0/22',
+        'NZ': '49.224.0.0/14',
+        'OM': '5.36.0.0/15',
+        'PA': '186.72.0.0/15',
+        'PE': '186.160.0.0/14',
+        'PF': '123.50.64.0/18',
+        'PG': '124.240.192.0/19',
+        'PH': '49.144.0.0/13',
+        'PK': '39.32.0.0/11',
+        'PL': '83.0.0.0/11',
+        'PM': '70.36.0.0/20',
+        'PR': '66.50.0.0/16',
+        'PS': '188.161.0.0/16',
+        'PT': '85.240.0.0/13',
+        'PW': '202.124.224.0/20',
+        'PY': '181.120.0.0/14',
+        'QA': '37.210.0.0/15',
+        'RE': '102.35.0.0/16',
+        'RO': '79.112.0.0/13',
+        'RS': '93.86.0.0/15',
+        'RU': '5.136.0.0/13',
+        'RW': '41.186.0.0/16',
+        'SA': '188.48.0.0/13',
+        'SB': '202.1.160.0/19',
+        'SC': '154.192.0.0/11',
+        'SD': '102.120.0.0/13',
+        'SE': '78.64.0.0/12',
+        'SG': '8.128.0.0/10',
+        'SI': '188.196.0.0/14',
+        'SK': '78.98.0.0/15',
+        'SL': '102.143.0.0/17',
+        'SM': '89.186.32.0/19',
+        'SN': '41.82.0.0/15',
+        'SO': '154.115.192.0/18',
+        'SR': '186.179.128.0/17',
+        'SS': '105.235.208.0/21',
+        'ST': '197.159.160.0/19',
+        'SV': '168.243.0.0/16',
+        'SX': '190.102.0.0/20',
+        'SY': '5.0.0.0/16',
+        'SZ': '41.84.224.0/19',
+        'TC': '65.255.48.0/20',
+        'TD': '154.68.128.0/19',
+        'TG': '196.168.0.0/14',
+        'TH': '171.96.0.0/13',
+        'TJ': '85.9.128.0/18',
+        'TK': '27.96.24.0/21',
+        'TL': '180.189.160.0/20',
+        'TM': '95.85.96.0/19',
+        'TN': '197.0.0.0/11',
+        'TO': '175.176.144.0/21',
+        'TR': '78.160.0.0/11',
+        'TT': '186.44.0.0/15',
+        'TV': '202.2.96.0/19',
+        'TW': '120.96.0.0/11',
+        'TZ': '156.156.0.0/14',
+        'UA': '37.52.0.0/14',
+        'UG': '102.80.0.0/13',
+        'US': '6.0.0.0/8',
+        'UY': '167.56.0.0/13',
+        'UZ': '84.54.64.0/18',
+        'VA': '212.77.0.0/19',
+        'VC': '207.191.240.0/21',
+        'VE': '186.88.0.0/13',
+        'VG': '66.81.192.0/20',
+        'VI': '146.226.0.0/16',
+        'VN': '14.160.0.0/11',
+        'VU': '202.80.32.0/20',
+        'WF': '117.20.32.0/21',
+        'WS': '202.4.32.0/19',
+        'YE': '134.35.0.0/16',
+        'YT': '41.242.116.0/22',
+        'ZA': '41.0.0.0/11',
+        'ZM': '102.144.0.0/13',
+        'ZW': '102.177.192.0/18',
+    }
+
+    @classmethod
+    def random_ipv4(cls, code_or_block):
+        if len(code_or_block) == 2:
+            block = cls._country_ip_map.get(code_or_block.upper())
+            if not block:
+                return None
+        else:
+            block = code_or_block
+        addr, preflen = block.split('/')
+        addr_min = struct.unpack('!L', socket.inet_aton(addr))[0]
+        addr_max = addr_min | (0xffffffff >> int(preflen))
+        return str(socket.inet_ntoa(
+            struct.pack('!L', random.randint(addr_min, addr_max))))
+
+
+# Both long_to_bytes and bytes_to_long are adapted from PyCrypto, which is
+# released into Public Domain
+# https://github.com/dlitz/pycrypto/blob/master/lib/Crypto/Util/number.py#L387
+
+def long_to_bytes(n, blocksize=0):
+    """long_to_bytes(n:long, blocksize:int) : string
+    Convert a long integer to a byte string.
+
+    If optional blocksize is given and greater than zero, pad the front of the
+    byte string with binary zeros so that the length is a multiple of
+    blocksize.
+    """
+    # after much testing, this algorithm was deemed to be the fastest
+    s = b''
+    n = int(n)
+    while n > 0:
+        s = struct.pack('>I', n & 0xffffffff) + s
+        n = n >> 32
+    # strip off leading zeros
+    for i in range(len(s)):
+        if s[i] != b'\000'[0]:
+            break
+    else:
+        # only happens when n == 0
+        s = b'\000'
+        i = 0
+    s = s[i:]
+    # add back some pad bytes.  this could be done more efficiently w.r.t. the
+    # de-padding being done above, but sigh...
+    if blocksize > 0 and len(s) % blocksize:
+        s = (blocksize - len(s) % blocksize) * b'\000' + s
+    return s
+
+
+def bytes_to_long(s):
+    """bytes_to_long(string) : long
+    Convert a byte string to a long integer.
+
+    This is (essentially) the inverse of long_to_bytes().
+    """
+    acc = 0
+    length = len(s)
+    if length % 4:
+        extra = (4 - length % 4)
+        s = b'\000' * extra + s
+        length = length + extra
+    for i in range(0, length, 4):
+        acc = (acc << 32) + struct.unpack('>I', s[i:i + 4])[0]
+    return acc
+
+
+def ohdave_rsa_encrypt(data, exponent, modulus):
+    """
+    Implement OHDave's RSA algorithm. See http://www.ohdave.com/rsa/
+
+    Input:
+        data: data to encrypt, bytes-like object
+        exponent, modulus: parameter e and N of RSA algorithm, both integer
+    Output: hex string of encrypted data
+
+    Limitation: supports one block encryption only
+    """
+
+    payload = int(binascii.hexlify(data[::-1]), 16)
+    encrypted = pow(payload, exponent, modulus)
+    return f'{encrypted:x}'
+
+
+def pkcs1pad(data, length):
+    """
+    Pad input data using EME-PKCS1-v1_5 encoding
+
+    @param {int[]} data        input data
+    @param {int}   length      target length
+    @returns {int[]}           padded data
+    """
+    if len(data) > length - 11:
+        raise ValueError('Input data too long for EME-PKCS1-v1_5 encoding')
+
+    pseudo_random = [secrets.randbelow(255) + 1 for _ in range(length - len(data) - 3)]
+    return [0, 2, *pseudo_random, 0, *data]
+
+
+def _base_n_table(n, table):
+    if not table and not n:
+        raise ValueError('Either table or n must be specified')
+    table = (table or '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')[:n]
+
+    if n and n != len(table):
+        raise ValueError(f'base {n} exceeds table length {len(table)}')
+    return table
+
+
+def encode_base_n(num, n=None, table=None):
+    """Convert given int to a base-n string"""
+    table = _base_n_table(n, table)
+    if not num:
+        return table[0]
+
+    result, base = '', len(table)
+    while num:
+        result = table[num % base] + result
+        num = num // base
+    return result
+
+
+def decode_base_n(string, n=None, table=None):
+    """Convert given base-n string to int"""
+    table = {char: index for index, char in enumerate(_base_n_table(n, table))}
+    result, base = 0, len(table)
+    for char in string:
+        result = result * base + table[char]
+    return result
+
+
+def decode_packed_codes(code):
+    mobj = re.search(PACKED_CODES_RE, code)
+    obfuscated_code, base, count, symbols = mobj.groups()
+    base = int(base)
+    count = int(count)
+    symbols = symbols.split('|')
+    symbol_table = {}
+
+    while count:
+        count -= 1
+        base_n_count = encode_base_n(count, base)
+        symbol_table[base_n_count] = symbols[count] or base_n_count
+
+    return re.sub(
+        r'\b(\w+)\b', lambda m: symbol_table.get(m.group(0), m.group(0)),
+        obfuscated_code)
+
+
+def caesar(s, alphabet, shift):
+    if shift == 0:
+        return s
+    l = len(alphabet)
+    return ''.join(
+        alphabet[(alphabet.index(c) + shift) % l] if c in alphabet else c
+        for c in s)
+
+
+def rot47(s):
+    return caesar(s, r'''!"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~''', 47)
+
+
+def parse_m3u8_attributes(attrib):
+    info = {}
+    for (key, val) in re.findall(r'(?P<key>[A-Z0-9-]+)=(?P<val>"[^"]+"|[^",]+)(?:,|$)', attrib):
+        if val.startswith('"'):
+            val = val[1:-1]
+        info[key] = val
+    return info
+
+
+def urshift(val, n):
+    return val >> n if val >= 0 else (val + 0x100000000) >> n
+
+def random_birthday(year_field, month_field, day_field):
+    start_date = dt.date(1950, 1, 1)
+    end_date = dt.date(1995, 12, 31)
+    offset = random.randint(0, (end_date - start_date).days)
+    random_date = start_date + dt.timedelta(offset)
+    return {
+        year_field: str(random_date.year),
+        month_field: str(random_date.month),
+        day_field: str(random_date.day),
+    }
+
+
+def find_available_port(interface=''):
+    try:
+        with socket.socket() as sock:
+            sock.bind((interface, 0))
+            return sock.getsockname()[1]
+    except OSError:
+        return None
+
+
+# Templates for internet shortcut files, which are plain text files.
+DOT_URL_LINK_TEMPLATE = '''\
+[InternetShortcut]
+URL=%(url)s
+'''
+
+DOT_WEBLOC_LINK_TEMPLATE = '''\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>URL</key>
+\t<string>%(url)s</string>
+</dict>
+</plist>
+'''
+
+DOT_DESKTOP_LINK_TEMPLATE = '''\
+[Desktop Entry]
+Encoding=UTF-8
+Name=%(filename)s
+Type=Link
+URL=%(url)s
+Icon=text-html
+'''
+
+LINK_TEMPLATES = {
+    'url': DOT_URL_LINK_TEMPLATE,
+    'desktop': DOT_DESKTOP_LINK_TEMPLATE,
+    'webloc': DOT_WEBLOC_LINK_TEMPLATE,
+}
+
+# Ref: https://specifications.freedesktop.org/desktop-entry/latest/value-types.html
+_DESKTOP_ENTRY_TRANS = str.maketrans({
+    ' ': R'\s',
+    '\n': R'\n',
+    '\t': R'\t',
+    '\r': R'\r',
+    '\\': R'\\',
+})
+
+
+def _desktop_entry_localestring(s):
+    return s.translate(_DESKTOP_ENTRY_TRANS)
+
+
+def iri_to_uri(iri, *, allowed_schemes=('http', 'https')):
+    """
+    Converts an IRI (Internationalized Resource Identifier, allowing Unicode characters) to a URI (Uniform Resource Identifier, ASCII-only).
+
+    The function doesn't add an additional layer of escaping; e.g., it doesn't escape `%3C` as `%253C`. Instead, it percent-escapes characters with an underlying UTF-8 encoding *besides* those already escaped, leaving the URI intact.
+    """
+
+    iri_parts = urllib.parse.urlparse(iri)
+
+    if iri_parts.scheme not in allowed_schemes:
+        raise ValueError(f'"{iri_parts.scheme}" is not in allowed_schemes: {", ".join(allowed_schemes)}')
+
+    if '[' in iri_parts.netloc:
+        raise ValueError('IPv6 URIs are not, yet, supported.')
+        # Querying `.netloc`, when there's only one bracket, also raises a ValueError.
+
+    # The `safe` argument values, that the following code uses, contain the characters that should not be percent-encoded. Everything else but letters, digits and '_.-' will be percent-encoded with an underlying UTF-8 encoding. Everything already percent-encoded will be left as is.
+
+    net_location = ''
+    if iri_parts.username:
+        net_location += urllib.parse.quote(iri_parts.username, safe=r"!$%&'()*+,~")
+        if iri_parts.password is not None:
+            net_location += ':' + urllib.parse.quote(iri_parts.password, safe=r"!$%&'()*+,~")
+        net_location += '@'
+
+    net_location += iri_parts.hostname.encode('idna').decode()  # Punycode for Unicode hostnames.
+    # The 'idna' encoding produces ASCII text.
+    if iri_parts.port is not None and iri_parts.port != 80:
+        net_location += ':' + str(iri_parts.port)
+
+    return urllib.parse.urlunparse(
+        (iri_parts.scheme,
+            net_location,
+
+            urllib.parse.quote_plus(iri_parts.path, safe=r"!$%&'()*+,/:;=@|~"),
+
+            # Unsure about the `safe` argument, since this is a legacy way of handling parameters.
+            urllib.parse.quote_plus(iri_parts.params, safe=r"!$%&'()*+,/:;=@|~"),
+
+            # Not totally sure about the `safe` argument, since the source does not explicitly mention the query URI component.
+            urllib.parse.quote_plus(iri_parts.query, safe=r"!$%&'()*+,/:;=?@{|}~"),
+
+            urllib.parse.quote_plus(iri_parts.fragment, safe=r"!#$%&'()*+,/:;=?@{|}~")))
+
+    # Source for `safe` arguments: https://url.spec.whatwg.org/#percent-encoded-bytes.
+
+
+def to_high_limit_path(path):
+    if sys.platform in ['win32', 'cygwin']:
+        # Work around MAX_PATH limitation on Windows. The maximum allowed length for the individual path segments may still be quite limited.
+        return '\\\\?\\' + os.path.abspath(path)
+
+    return path
+
+
+@partial_application
+def format_field(obj, field=None, template='%s', ignore=NO_DEFAULT, default='', func=IDENTITY):
+    val = traversal.traverse_obj(obj, *variadic(field))
+    if not val if ignore is NO_DEFAULT else val in variadic(ignore):
+        return default
+    return template % func(val)
+
+
+def clean_podcast_url(url):
+    url = re.sub(r'''(?x)
+        (?:
+            (?:
+                chtbl\.com/track|
+                media\.blubrry\.com| # https://create.blubrry.com/resources/podcast-media-download-statistics/getting-started/
+                play\.podtrac\.com|
+                chrt\.fm/track|
+                mgln\.ai/e
+            )(?:/[^/.]+)?|
+            (?:dts|www)\.podtrac\.com/(?:pts/)?redirect\.[0-9a-z]{3,4}| # http://analytics.podtrac.com/how-to-measure
+            flex\.acast\.com|
+            pd(?:
+                cn\.co| # https://podcorn.com/analytics-prefix/
+                st\.fm # https://podsights.com/docs/
+            )/e|
+            [0-9]\.gum\.fm|
+            pscrb\.fm/rss/p
+        )/''', '', url)
+    return re.sub(r'^\w+://(\w+://)', r'\1', url)
+
+def time_seconds(**kwargs):
+    """
+    Returns TZ-aware time in seconds since the epoch (1970-01-01T00:00:00Z)
+    """
+    return time.time() + dt.timedelta(**kwargs).total_seconds()
+
+
+# implemented following JWT https://www.rfc-editor.org/rfc/rfc7519.html
+# implemented following JWS https://www.rfc-editor.org/rfc/rfc7515.html
+def jwt_encode(payload_data, key, *, alg='HS256', headers=None):
+    assert alg in ('HS256',), f'Unsupported algorithm "{alg}"'
+
+    def jwt_json_bytes(obj):
+        return json.dumps(obj, separators=(',', ':')).encode()
+
+    def jwt_b64encode(bytestring):
+        return base64.urlsafe_b64encode(bytestring).rstrip(b'=')
+
+    header_data = {
+        'alg': alg,
+        'typ': 'JWT',
+    }
+    if headers:
+        # Allow re-ordering of keys if both 'alg' and 'typ' are present
+        if 'alg' in headers and 'typ' in headers:
+            header_data = headers
+        else:
+            header_data.update(headers)
+
+    header_b64 = jwt_b64encode(jwt_json_bytes(header_data))
+    payload_b64 = jwt_b64encode(jwt_json_bytes(payload_data))
+
+    # HS256 is the only algorithm currently supported
+    h = hmac.new(key.encode(), header_b64 + b'.' + payload_b64, hashlib.sha256)
+    signature_b64 = jwt_b64encode(h.digest())
+
+    return (header_b64 + b'.' + payload_b64 + b'.' + signature_b64).decode()
+
+
+# can be extended in future to verify the signature and parse header and return the algorithm used if it's not HS256
+def jwt_decode_hs256(jwt):
+    _header_b64, payload_b64, _signature_b64 = jwt.split('.')
+    # add trailing ='s that may have been stripped, superfluous ='s are ignored
+    return json.loads(base64.urlsafe_b64decode(f'{payload_b64}==='))
+
+def join_nonempty(*values, delim='-', from_dict=None):
+    if from_dict is not None:
+        values = (traversal.traverse_obj(from_dict, variadic(v)) for v in values)
+    return delim.join(map(str, filter(None, values)))
+
+
+def scale_thumbnails_to_max_format_width(formats, thumbnails, url_width_re):
+    """
+    Find the largest format dimensions in terms of video width and, for each thumbnail:
+    * Modify the URL: Match the width with the provided regex and replace with the former width
+    * Update dimensions
+
+    This function is useful with video services that scale the provided thumbnails on demand
+    """
+    _keys = ('width', 'height')
+    max_dimensions = max(
+        (tuple(fmt.get(k) or 0 for k in _keys) for fmt in formats),
+        default=(0, 0))
+    if not max_dimensions[0]:
+        return thumbnails
+    return [
+        merge_dicts(
+            {'url': re.sub(url_width_re, str(max_dimensions[0]), thumbnail['url'])},
+            dict(zip(_keys, max_dimensions, strict=True)), thumbnail)
+        for thumbnail in thumbnails
+    ]
+
+
+def parse_http_range(range):
+    """ Parse value of "Range" or "Content-Range" HTTP header into tuple. """
+    if not range:
+        return None, None, None
+    crg = re.search(r'bytes[ =](\d+)-(\d+)?(?:/(\d+))?', range)
+    if not crg:
+        return None, None, None
+    return int(crg.group(1)), int_or_none(crg.group(2)), int_or_none(crg.group(3))
+
+
+def read_stdin(what):
+    if what:
+        eof = 'Ctrl+Z' if os.name == 'nt' else 'Ctrl+D'
+        write_string(f'Reading {what} from STDIN - EOF ({eof}) to end:\n')
+    return sys.stdin
+
+
+def determine_file_encoding(data):
+    """
+    Detect the text encoding used
+    @returns (encoding, bytes to skip)
+    """
+
+    # BOM marks are given priority over declarations
+    for bom, enc in BOMS:
+        if data.startswith(bom):
+            return enc, len(bom)
+
+    # Strip off all null bytes to match even when UTF-16 or UTF-32 is used.
+    # We ignore the endianness to get a good enough match
+    data = data.replace(b'\0', b'')
+    mobj = re.match(rb'(?m)^#\s*coding\s*:\s*(\S+)\s*$', data)
+    return mobj.group(1).decode() if mobj else None, 0
+
+def merge_headers(*dicts):
+    """Merge dicts of http headers case insensitively, prioritizing the latter ones"""
+    return {k.title(): v for k, v in itertools.chain.from_iterable(map(dict.items, dicts))}
+
+
+def cached_method(f):
+    """Cache a method"""
+    signature = inspect.signature(f)
+
+    @functools.wraps(f)
+    def wrapper(self, *args, **kwargs):
+        bound_args = signature.bind(self, *args, **kwargs)
+        bound_args.apply_defaults()
+        key = tuple(bound_args.arguments.values())[1:]
+
+        cache = vars(self).setdefault('_cached_method__cache', {}).setdefault(f.__name__, {})
+        if key not in cache:
+            cache[key] = f(self, *args, **kwargs)
+        return cache[key]
+    return wrapper
+
+
+class classproperty:
+    """property access for class methods with optional caching"""
+    def __new__(cls, func=None, *args, **kwargs):
+        if not func:
+            return functools.partial(cls, *args, **kwargs)
+        return super().__new__(cls)
+
+    def __init__(self, func, *, cache=False):
+        functools.update_wrapper(self, func)
+        self.func = func
+        self._cache = {} if cache else None
+
+    def __get__(self, _, cls):
+        if self._cache is None:
+            return self.func(cls)
+        elif cls not in self._cache:
+            self._cache[cls] = self.func(cls)
+        return self._cache[cls]
+
+
+class function_with_repr:
+    def __init__(self, func, repr_=None):
+        functools.update_wrapper(self, func)
+        self.func, self.__repr = func, repr_
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+    @classmethod
+    def set_repr(cls, repr_):
+        return functools.partial(cls, repr_=repr_)
+
+    def __repr__(self):
+        if self.__repr:
+            return self.__repr
+        return f'{self.func.__module__}.{self.func.__qualname__}'
+
+
+class Namespace(types.SimpleNamespace):
+    """SimpleNamespace iterable over attribute values"""
+
+    def __iter__(self):
+        return iter(self.__dict__.values())
+
+    @property
+    def items_(self):
+        return self.__dict__.items()
+
+
+MEDIA_EXTENSIONS = Namespace(
+    common_video=('avi', 'flv', 'mkv', 'mov', 'mp4', 'webm'),
+    video=('3g2', '3gp', 'f4v', 'mk3d', 'divx', 'mpg', 'ogv', 'm4v', 'wmv'),
+    common_audio=('aiff', 'alac', 'flac', 'm4a', 'mka', 'mp3', 'ogg', 'opus', 'wav'),
+    audio=('aac', 'ape', 'asf', 'f4a', 'f4b', 'm4b', 'm4r', 'oga', 'ogx', 'spx', 'vorbis', 'wma', 'weba'),
+    thumbnails=('jpg', 'png', 'webp'),
+    storyboards=('mhtml', ),
+    subtitles=('srt', 'vtt', 'ass', 'lrc'),
+    manifests=('f4f', 'f4m', 'm3u8', 'smil', 'mpd'),
+)
+MEDIA_EXTENSIONS.video += MEDIA_EXTENSIONS.common_video
+MEDIA_EXTENSIONS.audio += MEDIA_EXTENSIONS.common_audio
+
+KNOWN_EXTENSIONS = (*MEDIA_EXTENSIONS.video, *MEDIA_EXTENSIONS.audio, *MEDIA_EXTENSIONS.manifests)
+
+
+class _UnsafeExtensionError(Exception):
+    """
+    Mitigation exception for uncommon/malicious file extensions
+    This should be caught in YoutubeDL.py alongside a warning
+
+    Ref: https://github.com/yt-dlp/yt-dlp/security/advisories/GHSA-79w7-vh3h-8g4j
+    """
+    ALLOWED_EXTENSIONS = frozenset([
+        # internal
+        'description',
+        'json',
+        'meta',
+        'orig',
+        'part',
+        'temp',
+        'uncut',
+        'unknown_video',
+        'ytdl',
+
+        # video
+        *MEDIA_EXTENSIONS.video,
+        'asx',
+        'ismv',
+        'm2t',
+        'm2ts',
+        'm2v',
+        'm4s',
+        'mng',
+        'mp2v',
+        'mp4v',
+        'mpe',
+        'mpeg',
+        'mpeg1',
+        'mpeg2',
+        'mpeg4',
+        'mxf',
+        'ogm',
+        'qt',
+        'rm',
+        'swf',
+        'ts',
+        'vid',
+        'vob',
+        'vp9',
+
+        # audio
+        *MEDIA_EXTENSIONS.audio,
+        '3ga',
+        'ac3',
+        'adts',
+        'aif',
+        'au',
+        'dts',
+        'isma',
+        'it',
+        'mid',
+        'mod',
+        'mpga',
+        'mp1',
+        'mp2',
+        'mp4a',
+        'mpa',
+        'ra',
+        'shn',
+        'xm',
+
+        # image
+        *MEDIA_EXTENSIONS.thumbnails,
+        'avif',
+        'bmp',
+        'gif',
+        'heic',
+        'ico',
+        'image',
+        'jfif',
+        'jng',
+        'jpe',
+        'jpeg',
+        'jxl',
+        'svg',
+        'tif',
+        'tiff',
+        'wbmp',
+
+        # subtitle
+        *MEDIA_EXTENSIONS.subtitles,
+        'dfxp',
+        'fs',
+        'ismt',
+        'json3',
+        'sami',
+        'scc',
+        'srv1',
+        'srv2',
+        'srv3',
+        'ssa',
+        'tt',
+        'ttml',
+        'xml',
+
+        # others
+        *MEDIA_EXTENSIONS.manifests,
+        *MEDIA_EXTENSIONS.storyboards,
+        'ism',
+        'm3u',
+        'sbv',
+    ])
+
+    _enabled = True
+
+    def __init__(self, extension, /):
+        super().__init__(f'unsafe file extension: {extension!r}')
+        self.extension = extension
+
+    @classmethod
+    def sanitize_extension(cls, extension, /, *, prepend=False, _allowed_exts=()):
+        if not cls._enabled:
+            return extension
+
+        if extension is None:
+            return None
+
+        if '/' in extension or '\\' in extension:
+            raise cls(extension)
+
+        if not prepend:
+            _, _, last = extension.rpartition('.')
+            if last == 'bin':
+                extension = last = 'unknown_video'
+            allowed = _allowed_exts or cls.ALLOWED_EXTENSIONS
+            if last.lower() not in allowed:
+                raise cls(extension)
+
+        return extension
+
+
+class RetryManager:
+    """Usage:
+        for retry in RetryManager(...):
+            try:
+                ...
+            except SomeException as err:
+                retry.error = err
+                continue
+    """
+    attempt, _error = 0, None
+
+    def __init__(self, _retries, _error_callback, **kwargs):
+        self.retries = _retries or 0
+        self.error_callback = functools.partial(_error_callback, **kwargs)
+
+    def _should_retry(self):
+        return self._error is not NO_DEFAULT and self.attempt <= self.retries
+
+    @property
+    def error(self):
+        if self._error is NO_DEFAULT:
+            return None
+        return self._error
+
+    @error.setter
+    def error(self, value):
+        self._error = value
+
+    def __iter__(self):
+        while self._should_retry():
+            self.error = NO_DEFAULT
+            self.attempt += 1
+            yield self
+            if self.error:
+                self.error_callback(self.error, self.attempt, self.retries)
+
+    @staticmethod
+    def report_retry(e, count, retries, *, sleep_func, info, warn, error=None, suffix=None):
+        """Utility function for reporting retries"""
+        if count > retries:
+            if error:
+                return error(f'{e}. Giving up after {count - 1} retries') if count > 1 else error(str(e))
+            raise e
+
+        if not count:
+            return warn(e)
+        elif isinstance(e, DeepError):
+            e = remove_end(str_or_none(e.cause) or e.orig_msg, '.')
+        warn(f'{e}. Retrying{format_field(suffix, None, " %s")} ({count}/{retries})...')
+
+        delay = float_or_none(sleep_func(n=count - 1)) if callable(sleep_func) else sleep_func
+        if delay:
+            info(f'Sleeping {delay:.2f} seconds ...')
+            time.sleep(delay)
+
+@partial_application
+def truncate_string(s, left, right=0):
+    assert left > 3 and right >= 0
+    if s is None or len(s) <= left + right:
+        return s
+    return f'{s[:left - 3]}...{s[-right:] if right else ""}'
+
+
+def orderedSet_from_options(options, alias_dict, *, use_regex=False, start=None):
+    assert 'all' in alias_dict, '"all" alias is required'
+    requested = list(start or [])
+    for val in options:
+        discard = val.startswith('-')
+        if discard:
+            val = val[1:]
+
+        if val in alias_dict:
+            val = alias_dict[val] if not discard else [
+                i[1:] if i.startswith('-') else f'-{i}' for i in alias_dict[val]]
+            # NB: Do not allow regex in aliases for performance
+            requested = orderedSet_from_options(val, alias_dict, start=requested)
+            continue
+
+        current = (filter(re.compile(val, re.I).fullmatch, alias_dict['all']) if use_regex
+                   else [val] if val in alias_dict['all'] else None)
+        if current is None:
+            raise ValueError(val)
+
+        if discard:
+            for item in current:
+                while item in requested:
+                    requested.remove(item)
+        else:
+            requested.extend(current)
+
+    return orderedSet(requested)
+
+def filesize_from_tbr(tbr, duration):
+    """
+    @param tbr:      Total bitrate in kbps (1000 bits/sec)
+    @param duration: Duration in seconds
+    @returns         Filesize in bytes
+    """
+    if tbr is None or duration is None:
+        return None
+    return int(duration * tbr * (1000 / 8))
+
+def dict_get(d, key_or_keys, default=None, skip_false_values=True):
+    for val in map(d.get, variadic(key_or_keys)):
+        if val is not None and (val or not skip_false_values):
+            return val
+    return default
+
+class _TreeBuilder(xml.etree.ElementTree.TreeBuilder):
+    def doctype(self, name, pubid, system):
+        pass
+
+def compat_etree_fromstring(text):
+    return xml.etree.ElementTree.XML(text, parser=xml.etree.ElementTree.XMLParser(target=_TreeBuilder()))
+
+class LazyList(collections.abc.Sequence):
+    """Lazy immutable list from an iterable
+    Note that slices of a LazyList are lists and not LazyList"""
+
+    class IndexError(IndexError):  # noqa: A001
+        pass
+
+    def __init__(self, iterable, *, reverse=False, _cache=None):
+        self._iterable = iter(iterable)
+        self._cache = [] if _cache is None else _cache
+        self._reversed = reverse
+
+    def __iter__(self):
+        if self._reversed:
+            # We need to consume the entire iterable to iterate in reverse
+            yield from self.exhaust()
+            return
+        yield from self._cache
+        for item in self._iterable:
+            self._cache.append(item)
+            yield item
+
+    def _exhaust(self):
+        self._cache.extend(self._iterable)
+        self._iterable = []  # Discard the emptied iterable to make it pickle-able
+        return self._cache
+
+    def exhaust(self):
+        """Evaluate the entire iterable"""
+        return self._exhaust()[::-1 if self._reversed else 1]
+
+    @staticmethod
+    def _reverse_index(x):
+        return None if x is None else ~x
+
+    def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            if self._reversed:
+                idx = slice(self._reverse_index(idx.start), self._reverse_index(idx.stop), -(idx.step or 1))
+            start, stop, step = idx.start, idx.stop, idx.step or 1
+        elif isinstance(idx, int):
+            if self._reversed:
+                idx = self._reverse_index(idx)
+            start, stop, step = idx, idx, 0
+        else:
+            raise TypeError('indices must be integers or slices')
+        if ((start or 0) < 0 or (stop or 0) < 0
+                or (start is None and step < 0)
+                or (stop is None and step > 0)):
+            # We need to consume the entire iterable to be able to slice from the end
+            # Obviously, never use this with infinite iterables
+            self._exhaust()
+            try:
+                return self._cache[idx]
+            except IndexError as e:
+                raise self.IndexError(e) from e
+        n = max(start or 0, stop or 0) - len(self._cache) + 1
+        if n > 0:
+            self._cache.extend(itertools.islice(self._iterable, n))
+        try:
+            return self._cache[idx]
+        except IndexError as e:
+            raise self.IndexError(e) from e
+
+    def __bool__(self):
+        try:
+            self[-1] if self._reversed else self[0]
+        except self.IndexError:
+            return False
+        return True
+
+    def __len__(self):
+        self._exhaust()
+        return len(self._cache)
+
+    def __reversed__(self):
+        return type(self)(self._iterable, reverse=not self._reversed, _cache=self._cache)
+
+    def __copy__(self):
+        return type(self)(self._iterable, reverse=self._reversed, _cache=self._cache)
+
+    def __repr__(self):
+        # repr and str should mimic a list. So we exhaust the iterable
+        return repr(self.exhaust())
+
+    def __str__(self):
+        return repr(self.exhaust())
+
+def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Callable[[list], typing.Any]] | None = None):
+    # based on https://github.com/Rich-Harris/devalue/blob/f3fd2aa93d79f21746555671f955a897335edb1b/src/parse.js
+    resolved = {
+        -1: None,
+        -2: None,
+        -3: math.nan,
+        -4: math.inf,
+        -5: -math.inf,
+        -6: -0.0,
+    }
+
+    if isinstance(parsed, int) and not isinstance(parsed, bool):
+        if parsed not in resolved or parsed == -2:
+            raise ValueError('invalid integer input')
+        return resolved[parsed]
+    elif not isinstance(parsed, list):
+        raise ValueError('expected int or list as input')
+    elif not parsed:
+        raise ValueError('expected a non-empty list as input')
+
+    if revivers is None:
+        revivers = {}
+    return_value = [None]
+    stack: list[tuple] = [(return_value, 0, 0)]
+
+    while stack:
+        target, index, source = stack.pop()
+        if isinstance(source, tuple):
+            name, source, reviver = source
+            try:
+                target[index] = reviver(target[index])
+            except Exception as error:
+                yield TypeError(f'failed to parse {source} as {name!r}: {error}')
+                target[index] = None
+            continue
+
+        if source in resolved:
+            target[index] = resolved[source]
+            continue
+
+        # guard against Python negative indexing
+        if source < 0:
+            yield IndexError(f'invalid index: {source!r}')
+            continue
+
+        try:
+            value = parsed[source]
+        except IndexError as error:
+            yield error
+            continue
+
+        if isinstance(value, list):
+            if value and isinstance(value[0], str):
+                type_name = value[0]
+                # TODO: implement zips `strict=True`
+                if reviver := revivers.get(type_name):
+                    if value[1] == source:
+                        # XXX: avoid infinite loop
+                        yield IndexError(f'{type_name!r} cannot point to itself (index: {source})')
+                        continue
+                    # inverse order: resolve index, revive value
+                    stack.append((target, index, (type_name, value[1], reviver)))
+                    stack.append((target, index, value[1]))
+                    continue
+
+                elif type_name == 'Date':
+                    try:
+                        result = dt.datetime.fromtimestamp(parse_iso8601(value[1]), tz=dt.timezone.utc)
+                    except Exception:
+                        yield ValueError(f'invalid date: {value[1]!r}')
+                        result = None
+
+                elif type_name == 'Set':
+                    result = [None] * (len(value) - 1)
+                    for offset, new_source in enumerate(value[1:]):
+                        stack.append((result, offset, new_source))
+
+                elif type_name == 'Map':
+                    result = []
+                    for key, new_source in zip(*(iter(value[1:]),) * 2, strict=True):
+                        pair = [None, None]
+                        stack.append((pair, 0, key))
+                        stack.append((pair, 1, new_source))
+                        result.append(pair)
+
+                elif type_name == 'RegExp':
+                    # XXX: use jsinterp to translate regex flags
+                    #      currently ignores `value[2]`
+                    result = re.compile(value[1])
+
+                elif type_name == 'Object':
+                    result = value[1]
+
+                elif type_name == 'BigInt':
+                    result = int(value[1])
+
+                elif type_name == 'null':
+                    result = {}
+                    for key, new_source in zip(*(iter(value[1:]),) * 2, strict=True):
+                        stack.append((result, key, new_source))
+
+                elif type_name == 'ArrayBuffer':
+                    try:
+                        if len(value) < 2 or not isinstance(value[1], str):
+                            raise TypeError(f'Invalid ArrayBuffer encoding: {value[1:]!r}')
+                        result = base64.b64decode(value[1])
+                    except Exception as error:
+                        yield ValueError(f'Invalid ArrayBuffer at {source}: {error}')
+                        result = None
+
+                elif type_name in _ARRAY_TYPE_LOOKUP or type_name == 'DataView':
+                    try:
+                        if len(value) < 2:
+                            raise TypeError('Missing ArrayBuffer reference')
+                        if isinstance(value[1], str):
+                            data = base64.b64decode(value[1])
+                        else:
+                            buffer_index = value[1]
+                            if (
+                                not isinstance(buffer_index, int)
+                                or isinstance(buffer_index, bool)
+                                or not 0 <= buffer_index < len(parsed)
+                            ):
+                                raise IndexError(f'Invalid ArrayBuffer index: {buffer_index!r}')
+
+                            if buffer_index in resolved:
+                                data = resolved[buffer_index]
+                                if not isinstance(data, bytes):
+                                    raise TypeError(f'Invalid ArrayBuffer reference: {buffer_index!r}')
+                            else:
+                                buffer = parsed[buffer_index]
+                                if not (
+                                    isinstance(buffer, list)
+                                    and len(buffer) >= 2
+                                    and buffer[0] == 'ArrayBuffer'
+                                    and isinstance(buffer[1], str)
+                                ):
+                                    raise TypeError(f'Invalid ArrayBuffer reference: {buffer_index!r}')
+                                data = resolved[buffer_index] = base64.b64decode(buffer[1])
+
+                        offset = value[2] if len(value) > 2 else 0
+                        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+                            raise ValueError(f'Invalid byte offset: {offset!r}')
+
+                        length = value[3] if len(value) > 3 else None
+                        if length is not None and (
+                            not isinstance(length, int) or isinstance(length, bool) or length < 0
+                        ):
+                            raise ValueError(f'Invalid length: {length!r}')
+
+                        if type_name == 'DataView':
+                            end = len(data) if length is None else offset + length
+                            if offset > len(data) or end > len(data):
+                                raise ValueError('View exceeds ArrayBuffer length')
+                            result = data[offset:end]
+                        else:
+                            typecode = _ARRAY_TYPE_LOOKUP[type_name]
+                            itemsize = struct.calcsize(f'={typecode}')
+                            if offset % itemsize:
+                                raise ValueError(f'Byte offset {offset} is not aligned to {itemsize}-byte elements')
+                            if offset > len(data):
+                                raise ValueError('View exceeds ArrayBuffer length')
+
+                            if length is None:
+                                view = data[offset:]
+                                if len(view) % itemsize:
+                                    raise ValueError(f'Byte length is not a multiple of {itemsize}')
+                            else:
+                                end = offset + length * itemsize
+                                if end > len(data):
+                                    raise ValueError('View exceeds ArrayBuffer length')
+                                view = data[offset:end]
+
+                            result = [item[0] for item in struct.iter_unpack(f'={typecode}', view)]
+                    except Exception as error:
+                        yield ValueError(f'Invalid {type_name} at {source}: {error}')
+                        result = None
+
+                else:
+                    yield TypeError(f'Invalid type at {source}: {type_name!r}')
+                    result = None
+            else:
+                result = len(value) * [None]
+                for offset, new_source in enumerate(value):
+                    stack.append((result, offset, new_source))
+
+        elif isinstance(value, dict):
+            result = {}
+            for key, new_source in value.items():
+                stack.append((result, key, new_source))
+
+        else:
+            result = value
+
+        target[index] = resolved[source] = result
+
+    return return_value[0]
+
+def search_regex(pattern, string, name, default=NO_DEFAULT, fatal=True, flags=0, group=None):
+    """
+    Perform a regex search on the given string, using a single or a list of
+    patterns returning the first matching group.
+    In case of failure return a default value or raise a WARNING or a
+    RegexNotFoundError, depending on fatal, specifying the field name.
+    """
+    if string is None:
+        mobj = None
+    elif isinstance(pattern, (str, re.Pattern)):
+        mobj = re.search(pattern, string, flags)
+    else:
+        for p in pattern:
+            mobj = re.search(p, string, flags)
+            if mobj:
+                break
+
+    if mobj:
+        if group is None:
+            # return the first matching group
+            return next(g for g in mobj.groups() if g is not None)
+        elif isinstance(group, (list, tuple)):
+            return tuple(mobj.group(g) for g in group)
+        else:
+            return mobj.group(group)
+    elif default is not NO_DEFAULT:
+        return default
+    elif fatal:
+        raise RegexNotFoundError(f'Unable to extract {name}')
+    else:
+        return None
+
+def search_json(start_pattern, string, name, video_id, *, end_pattern='',
+                 contains_pattern=r'{(?s:.+)}', fatal=True, default=NO_DEFAULT, **kwargs):
+    """Searches string for the JSON object specified by start_pattern"""
+    # NB: end_pattern is only used to reduce the size of the initial match
+    if default is NO_DEFAULT:
+        default, has_default = {}, False
+    else:
+        fatal, has_default = False, True
+
+    json_string = search_regex(
+        rf'(?:{start_pattern})\s*(?P<json>{contains_pattern})\s*(?:{end_pattern})',
+        string, name, group='json', fatal=fatal, default=None if has_default else NO_DEFAULT)
+    if not json_string:
+        return default
+
+    try:
+        return parse_json(json_string, video_id, ignore_extra=True, **kwargs)
+    except DeepError as e:
+        if fatal:
+            raise DeepError(
+                f'Unable to extract {name} - Failed to parse JSON', cause=e.cause, video_id=video_id)
+        elif not has_default:
+            return default
+    return default
+
+def html_search_regex(pattern, string, name, default=NO_DEFAULT, fatal=True, flags=0, group=None):
+    """
+    Like _search_regex, but strips HTML tags and unescapes entities.
+    """
+    res = search_regex(pattern, string, name, default, fatal, flags, group)
+    if isinstance(res, tuple):
+        return tuple(map(clean_html, res))
+    return clean_html(res)
+
+def parse_json(json_string, video_id, transform_source=None, fatal=True, errnote=None, **parser_kwargs):
+    try:
+        return json.loads(
+            json_string, cls=LenientJSONDecoder, strict=False, transform_source=transform_source, **parser_kwargs)
+    except ValueError as ve:
+        raise DeepError('Failed to parse JSON' if errnote is None else errnote, fatal, video_id, ve)
+
+def og_regexes(prop):
+    content_re = r'content=(?:"([^"]+?)"|\'([^\']+?)\'|\s*([^\s"\'=<>`]+?)(?=\s|/?>))'
+    property_re = r'(?:name|property)=(?:\'og{sep}{prop}\'|"og{sep}{prop}"|\s*og{sep}{prop}\b)'.format(
+        prop=re.escape(prop), sep='(?:&#x3A;|[:-])')
+    template = r'<meta[^>]+?%s[^>]+?%s'
+    return [
+        template % (property_re, content_re),
+        template % (content_re, property_re),
+    ]
+
+def meta_regex(prop):
+    return rf'''(?isx)<meta
+                (?=[^>]+(?:itemprop|name|property|id|http-equiv)=(["\']?){re.escape(prop)}\1)
+                [^>]+?content=(["\'])(?P<content>.*?)\2'''
+
+def og_search_property(prop, html, name=None, **kargs):
+    prop = variadic(prop)
+    if name is None:
+        name = f'OpenGraph {prop[0]}'
+    og_regexes = []
+    for p in prop:
+        og_regexes.extend(og_regexes(p))
+    escaped = search_regex(og_regexes, html, name, flags=re.DOTALL, **kargs)
+    if escaped is None:
+        return None
+    return unescapeHTML(escaped)
+
+def og_search_thumbnail(html, **kargs):
+    return og_search_property('image', html, 'thumbnail URL', fatal=False, **kargs)
+
+def og_search_description(html, **kargs):
+    return og_search_property('description', html, fatal=False, **kargs)
+
+def og_search_title(html, *, fatal=False, **kargs):
+    return og_search_property('title', html, fatal=fatal, **kargs)
+
+def og_search_video_url(html, name='video url', secure=True, **kargs):
+    regexes = og_regexes('video') + og_regexes('video:url')
+    if secure:
+        regexes = og_regexes('video:secure_url') + regexes
+    return html_search_regex(regexes, html, name, **kargs)
+
+def og_search_url(html, **kargs):
+    return og_search_property('url', html, **kargs)
+
+def html_extract_title(self, html, name='title', *, fatal=False, **kwargs):
+    return html_search_regex(r'(?s)<title\b[^>]*>([^<]+)</title>', html, name, fatal=fatal, **kwargs)
+
+def html_search_meta(self, name, html, display_name=None, fatal=False, **kwargs):
+    name = variadic(name)
+    if display_name is None:
+        display_name = name[0]
+    return html_search_regex(
+        [self._meta_regex(n) for n in name],
+        html, display_name, fatal=fatal, group='content', **kwargs)
+
+def dc_search_uploader(html):
+    return html_search_meta('dc.creator', html, 'uploader')
+
+def rta_search(html):
+    # See http://www.rtalabel.org/index.php?content=howtofaq#single
+    if re.search(r'(?ix)<meta\s+name="rating"\s+'
+                 r'     content="RTA-5042-1996-1400-1577-RTA"',
+                 html):
+        return 18
+
+    # And then there are the jokers who advertise that they use RTA, but actually don't.
+    AGE_LIMIT_MARKERS = [
+        r'Proudly Labeled <a href="http://www\.rtalabel\.org/" title="Restricted to Adults">RTA</a>',
+        r'>[^<]*you acknowledge you are at least (\d+) years old',
+        r'>\s*(?:18\s+U(?:\.S\.C\.|SC)\s+)?(?:§+\s*)?2257\b',
+    ]
+
+    age_limit = None
+    for marker in AGE_LIMIT_MARKERS:
+        mobj = re.search(marker, html)
+        if mobj:
+            age_limit = max(age_limit or 0, int(traversal.traverse_obj(mobj, 1, default=18)))
+    return age_limit
+
+def search_nextjs_data(webpage, video_id, *, fatal=True, default=NO_DEFAULT, **kw):
+    if default == '{}':
+        default = {}
+    if default is not NO_DEFAULT:
+        fatal = False
+
+    return search_json(
+        r'<script[^>]+id=[\'"]__NEXT_DATA__[\'"][^>]*>', webpage, 'next.js data',
+        video_id, end_pattern='</script>', fatal=fatal, default=default, **kw)
+
+def search_nextjs_v13_data(webpage, video_id, fatal=True):
+    """Parses Next.js app router flight data that was introduced in Next.js v13"""
+    nextjs_data = {}
+    if not fatal and not isinstance(webpage, str):
+        return nextjs_data
+
+    def flatten(flight_data):
+        if not isinstance(flight_data, list):
+            return
+        if len(flight_data) == 4 and flight_data[0] == '$':
+            _, name, _, data = flight_data
+            if not isinstance(data, dict):
+                return
+            children = data.pop('children', None)
+            if data and isinstance(name, str) and re.fullmatch(r'\$L[0-9a-f]+', name):
+                # It is useful hydration JSON data
+                nextjs_data[name[2:]] = data
+            flatten(children)
+            return
+        for f in flight_data:
+            flatten(f)
+
+    flight_text = ''
+    # The pattern for the surrounding JS/tag should be strict as it's a hardcoded string in the next.js source
+    # Ref: https://github.com/vercel/next.js/blob/5a4a08fdc/packages/next/src/server/app-render/use-flight-response.tsx#L189
+    for flight_segment in re.findall(r'<script\b[^>]*>self\.__next_f\.push\((\[.+?\])\)</script>', webpage):
+        segment = parse_json(flight_segment, video_id, fatal=fatal, errnote=None if fatal else False)
+        # Some earlier versions of next.js "optimized" away this array structure; this is unsupported
+        # Ref: https://github.com/vercel/next.js/commit/0123a9d5c9a9a77a86f135b7ae30b46ca986d761
+        if not isinstance(segment, list) or len(segment) != 2:
+            continue
+        # Only use the relevant payload type (1 == data)
+        # Ref: https://github.com/vercel/next.js/blob/5a4a08fdc/packages/next/src/server/app-render/use-flight-response.tsx#L11-L14
+        payload_type, chunk = segment
+        if payload_type == 1:
+            flight_text += chunk
+
+    for f in flight_text.splitlines():
+        prefix, _, body = f.lstrip().partition(':')
+        if not re.fullmatch(r'[0-9a-f]+', prefix):
+            continue
+        # The body still isn't guaranteed to be valid JSON, so parsing should always be non-fatal
+        if body.startswith('[') and body.endswith(']'):
+            flatten(parse_json(body, video_id, fatal=False, errnote=False))
+        elif body.startswith('{') and body.endswith('}'):
+            data = parse_json(body, video_id, fatal=False, errnote=False)
+            if data is not None:
+                nextjs_data[prefix] = data
+
+    return nextjs_data
+
+def search_nuxt_data(webpage, video_id, context_name='__NUXT__', *, fatal=True, traverse=('data', 0)):
+    """Parses Nuxt.js metadata. This works as long as the function __NUXT__ invokes is a pure function"""
+    rectx = re.escape(context_name)
+    FUNCTION_RE = r'\(function\((?P<arg_keys>.*?)\){.*?\breturn\s+(?P<js>{.*?})\s*;?\s*}\((?P<arg_vals>.*?)\)'
+    js, arg_keys, arg_vals = search_regex(
+        (rf'<script>\s*window\.{rectx}={FUNCTION_RE}\s*\)\s*;?\s*</script>', rf'{rectx}\(.*?{FUNCTION_RE}'),
+        webpage, context_name, group=('js', 'arg_keys', 'arg_vals'),
+        default=NO_DEFAULT if fatal else (None, None, None))
+    if js is None:
+        return {}
+
+    args = dict(zip(arg_keys.split(','), map(json.dumps, parse_json(
+        f'[{arg_vals}]', video_id, transform_source=js_to_json, fatal=fatal) or ()), strict=True))
+
+    ret = parse_json(js, video_id, transform_source=functools.partial(js_to_json, vars=args), fatal=fatal)
+    return traversal.traverse_obj(ret, traverse) or {}
+
+def resolve_nuxt_array(array, video_id, *, fatal=True, default=NO_DEFAULT):
+    """Resolves Nuxt rich JSON payload arrays"""
+    # Ref: https://github.com/nuxt/nuxt/commit/9e503be0f2a24f4df72a3ccab2db4d3e63511f57
+    #      https://github.com/nuxt/nuxt/pull/19205
+    if default is not NO_DEFAULT:
+        fatal = False
+
+    if not isinstance(array, list) or not array:
+        error_msg = 'Unable to resolve Nuxt JSON data: invalid input'
+        if fatal:
+            raise DeepError(error_msg, video_id=video_id)
+        return {} if default is NO_DEFAULT else default
+
+    def indirect_reviver(data):
+        return data
+
+    def json_reviver(data):
+        return json.loads(data)
+
+    gen = parse_iter(array, revivers={
+        'NuxtError': indirect_reviver,
+        'EmptyShallowRef': json_reviver,
+        'EmptyRef': json_reviver,
+        'ShallowRef': indirect_reviver,
+        'ShallowReactive': indirect_reviver,
+        'Ref': indirect_reviver,
+        'Reactive': indirect_reviver,
+        'skipHydrate': indirect_reviver,
+    })
+
+    while True:
+        try:
+            error_msg = f'Error resolving Nuxt JSON: {gen.send(None)}'
+            if fatal:
+                raise DeepError(error_msg, video_id=video_id)
+        except StopIteration as error:
+            return error.value or ({} if default is NO_DEFAULT else default)
+
+def search_nuxt_json(self, webpage, video_id, *, fatal=True, default=NO_DEFAULT):
+    """Parses metadata from Nuxt rich JSON payloads embedded in HTML"""
+    passed_default = default is not NO_DEFAULT
+
+    array = self._search_json(
+        r'<script\b[^>]+\bid="__NUXT_DATA__"[^>]*>', webpage,
+        'Nuxt JSON data', video_id, contains_pattern=r'\[(?s:.+)\]',
+        fatal=fatal, default=NO_DEFAULT if not passed_default else None)
+
+    if not array:
+        return default if passed_default else {}
+
+    return self._resolve_nuxt_array(array, video_id, fatal=fatal, default=default)
+
+def hidden_inputs(html):
+    html = re.sub(r'<!--(?:(?!<!--).)*-->', '', html)
+    hidden_inputs = {}
+    for input_el in re.findall(r'(?i)(<input[^>]+>)', html):
+        attrs = extract_attributes(input_el)
+        if not input_el:
+            continue
+        if attrs.get('type') not in ('hidden', 'submit'):
+            continue
+        name = attrs.get('name') or attrs.get('id')
+        value = attrs.get('value')
+        if name and value is not None:
+            hidden_inputs[name] = value
+    return hidden_inputs
+
+def form_hidden_inputs(form_id, html):
+    form = search_regex(
+        rf'(?is)<form[^>]+?id=(["\']){form_id}\1[^>]*>(?P<form>.+?)</form>',
+        html, f'{form_id} form', group='form')
+    return hidden_inputs(form)
+
+def has_drm(manifest):
+    return bool(re.search('|'.join((
+        r'#EXT-X-(?:SESSION-)?KEY:.*?URI="skd://',  # Apple FairPlay
+        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.apple\.streamingkeydelivery"',  # Apple FairPlay
+        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.microsoft\.playready"',  # Microsoft PlayReady
+        r'#EXT-X-FAXS-CM:',  # Adobe Flash Access
+    )), manifest))
+
+def merge_subtitle_items(subtitle_list1, subtitle_list2):
+    """ Merge subtitle items for one language. Items with duplicated URLs/data
+    will be dropped. """
+    list1_data = {(item.get('url'), item.get('data')) for item in subtitle_list1}
+    ret = list(subtitle_list1)
+    ret.extend(item for item in subtitle_list2 if (item.get('url'), item.get('data')) not in list1_data)
+    return ret
+    
+def merge_subtitles(*dicts, target=None):
+    """ Merge subtitle dictionaries, language by language. """
+    if target is None:
+        target = {}
+    for d in filter(None, dicts):
+        for lang, subs in d.items():
+            target[lang] = merge_subtitle_items(target.get(lang, []), subs)
+    return target
+
+def parse_m3u8_formats_and_subtitles(
+        m3u8_doc, m3u8_url=None, ext=None, entry_protocol='m3u8_native',
+        preference=None, quality=None, m3u8_id=None, live=False, note=None,
+        errnote=None, fatal=True, data=None, headers={}, query={},
+        video_id=None):
+    formats, subtitles = [], {}
+    has_drm = has_drm(m3u8_doc)
+
+    def format_url(url):
+        return url if re.match(r'https?://', url) else urllib.parse.urljoin(m3u8_url, url)
+
+    def _extract_m3u8_playlist_indices(*args, **kwargs):
+            return [None]
+
+    # References:
+    # 1. https://tools.ietf.org/html/draft-pantos-http-live-streaming-21
+    # 2. https://github.com/ytdl-org/youtube-dl/issues/12211
+    # 3. https://github.com/ytdl-org/youtube-dl/issues/18923
+
+    # We should try extracting formats only from master playlists [1, 4.3.4],
+    # i.e. playlists that describe available qualities. On the other hand
+    # media playlists [1, 4.3.3] should be returned as is since they contain
+    # just the media without qualities renditions.
+    # Fortunately, master playlist can be easily distinguished from media
+    # playlist based on particular tags availability. As of [1, 4.3.3, 4.3.4]
+    # master playlist tags MUST NOT appear in a media playlist and vice versa.
+    # As of [1, 4.3.3.1] #EXT-X-TARGETDURATION tag is REQUIRED for every
+    # media playlist and MUST NOT appear in master playlist thus we can
+    # clearly detect media playlist with this criterion.
+
+    if '#EXT-X-TARGETDURATION' in m3u8_doc:  # media playlist, return as is
+        formats = [{
+            'format_id': join_nonempty(m3u8_id, idx),
+            'format_index': idx,
+            'url': m3u8_url or encode_data_uri(m3u8_doc.encode(), 'application/x-mpegurl'),
+            'ext': ext,
+            'protocol': entry_protocol,
+            'preference': preference,
+            'quality': quality,
+            'has_drm': has_drm,
+        } for idx in _extract_m3u8_playlist_indices(m3u8_doc=m3u8_doc)]
+
+        return formats, subtitles
+
+    groups = {}
+    last_stream_inf = {}
+
+    def extract_media(x_media_line):
+        media = parse_m3u8_attributes(x_media_line)
+        # As per [1, 4.3.4.1] TYPE, GROUP-ID and NAME are REQUIRED
+        media_type, group_id, name = media.get('TYPE'), media.get('GROUP-ID'), media.get('NAME')
+        if not (media_type and group_id and name):
+            return
+        groups.setdefault(group_id, []).append(media)
+        # <https://tools.ietf.org/html/rfc8216#section-4.3.4.1>
+        if media_type == 'SUBTITLES':
+            # According to RFC 8216 §4.3.4.2.1, URI is REQUIRED in the
+            # EXT-X-MEDIA tag if the media type is SUBTITLES.
+            # However, lack of URI has been spotted in the wild.
+            # e.g. NebulaIE; see https://github.com/yt-dlp/yt-dlp/issues/339
+            if not media.get('URI'):
+                return
+            url = format_url(media['URI'])
+            sub_info = {
+                'url': url,
+                'ext': determine_ext(url),
+            }
+            if sub_info['ext'] == 'm3u8':
+                # Per RFC 8216 §3.1, the only possible subtitle format m3u8
+                # files may contain is WebVTT:
+                # <https://tools.ietf.org/html/rfc8216#section-3.1>
+                sub_info['ext'] = 'vtt'
+                sub_info['protocol'] = 'm3u8_native'
+            lang = media.get('LANGUAGE') or 'und'
+            subtitles.setdefault(lang, []).append(sub_info)
+        if media_type not in ('VIDEO', 'AUDIO'):
+            return
+        media_url = media.get('URI')
+        if media_url:
+            manifest_url = format_url(media_url)
+            is_audio = media_type == 'AUDIO'
+            is_alternate = media.get('DEFAULT') == 'NO' or media.get('AUTOSELECT') == 'NO'
+            formats.extend({
+                'format_id': join_nonempty(m3u8_id, group_id, name, idx),
+                'format_note': name,
+                'format_index': idx,
+                'url': manifest_url,
+                'manifest_url': m3u8_url,
+                'language': media.get('LANGUAGE'),
+                'ext': ext,
+                'protocol': entry_protocol,
+                'preference': preference,
+                'quality': quality,
+                'has_drm': has_drm,
+                'vcodec': 'none' if is_audio else None,
+                # Alternate audio formats (e.g. audio description) should be deprioritized
+                'source_preference': -2 if is_audio and is_alternate else None,
+                # Save this to assign source_preference based on associated video stream
+                '_audio_group_id': group_id if is_audio and not is_alternate else None,
+            } for idx in _extract_m3u8_playlist_indices(manifest_url))
+
+    def build_stream_name():
+        # Despite specification does not mention NAME attribute for
+        # EXT-X-STREAM-INF tag it still sometimes may be present (see [1]
+        # or vidio test in TestInfoExtractor.test_parse_m3u8_formats)
+        # 1. http://www.vidio.com/watch/165683-dj_ambred-booyah-live-2015
+        stream_name = last_stream_inf.get('NAME')
+        if stream_name:
+            return stream_name
+        # If there is no NAME in EXT-X-STREAM-INF it will be obtained
+        # from corresponding rendition group
+        stream_group_id = last_stream_inf.get('VIDEO')
+        if not stream_group_id:
+            return
+        stream_group = groups.get(stream_group_id)
+        if not stream_group:
+            return stream_group_id
+        rendition = stream_group[0]
+        return rendition.get('NAME') or stream_group_id
+
+    # parse EXT-X-MEDIA tags before EXT-X-STREAM-INF in order to have the
+    # chance to detect video only formats when EXT-X-STREAM-INF tags
+    # precede EXT-X-MEDIA tags in HLS manifest such as [3].
+    for line in m3u8_doc.splitlines():
+        if line.startswith('#EXT-X-MEDIA:'):
+            extract_media(line)
+
+    for line in m3u8_doc.splitlines():
+        if line.startswith('#EXT-X-STREAM-INF:'):
+            last_stream_inf = parse_m3u8_attributes(line)
+        elif line.startswith('#') or not line.strip():
+            continue
+        else:
+            tbr = float_or_none(
+                last_stream_inf.get('AVERAGE-BANDWIDTH')
+                or last_stream_inf.get('BANDWIDTH'), scale=1000)
+            manifest_url = format_url(line.strip())
+
+            for idx in _extract_m3u8_playlist_indices(manifest_url):
+                format_id = [m3u8_id, None, idx]
+                # Bandwidth of live streams may differ over time thus making
+                # format_id unpredictable. So it's better to keep provided
+                # format_id intact.
+                if not live:
+                    stream_name = build_stream_name()
+                    format_id[1] = stream_name or '%d' % (tbr or len(formats))
+                f = {
+                    'format_id': join_nonempty(*format_id),
+                    'format_index': idx,
+                    'url': manifest_url,
+                    'manifest_url': m3u8_url,
+                    'tbr': tbr,
+                    'ext': ext,
+                    'fps': float_or_none(last_stream_inf.get('FRAME-RATE')),
+                    'protocol': entry_protocol,
+                    'preference': preference,
+                    'quality': quality,
+                    'has_drm': has_drm,
+                }
+
+                # YouTube-specific
+                if yt_audio_content_id := last_stream_inf.get('YT-EXT-AUDIO-CONTENT-ID'):
+                    f['language'] = yt_audio_content_id.split('.')[0]
+
+                resolution = last_stream_inf.get('RESOLUTION')
+                if resolution:
+                    mobj = re.search(r'(?P<width>\d+)[xX](?P<height>\d+)', resolution)
+                    if mobj:
+                        f['width'] = int(mobj.group('width'))
+                        f['height'] = int(mobj.group('height'))
+                # Unified Streaming Platform
+                mobj = re.search(
+                    r'audio.*?(?:%3D|=)(\d+)(?:-video.*?(?:%3D|=)(\d+))?', f['url'])
+                if mobj:
+                    abr, vbr = mobj.groups()
+                    abr, vbr = float_or_none(abr, 1000), float_or_none(vbr, 1000)
+                    f.update({
+                        'vbr': vbr,
+                        'abr': abr,
+                    })
+                codecs = parse_codecs(last_stream_inf.get('CODECS'))
+                f.update(codecs)
+                audio_group_id = last_stream_inf.get('AUDIO')
+                # As per [1, 4.3.4.1.1] any EXT-X-STREAM-INF tag which
+                # references a rendition group MUST have a CODECS attribute.
+                # However, this is not always respected. E.g. [2]
+                # contains EXT-X-STREAM-INF tag which references AUDIO
+                # rendition group but does not have CODECS and despite
+                # referencing an audio group it represents a complete
+                # (with audio and video) format. So, for such cases we will
+                # ignore references to rendition groups and treat them
+                # as complete formats.
+                if audio_group_id and codecs and f.get('vcodec') != 'none':
+                    # Save this to determine quality of audio formats that only have a GROUP-ID
+                    f['_audio_group_id'] = audio_group_id
+                    audio_group = groups.get(audio_group_id)
+                    if audio_group and audio_group[0].get('URI'):
+                        # TODO: update acodec for audio only formats with
+                        # the same GROUP-ID
+                        f['acodec'] = 'none'
+                if not f.get('ext'):
+                    f['ext'] = 'm4a' if f.get('vcodec') == 'none' else 'mp4'
+                formats.append(f)
+
+                # for DailyMotion
+                progressive_uri = last_stream_inf.get('PROGRESSIVE-URI')
+                if progressive_uri:
+                    http_f = f.copy()
+                    del http_f['manifest_url']
+                    http_f.update({
+                        'format_id': f['format_id'].replace('hls-', 'http-'),
+                        'protocol': 'http',
+                        'url': progressive_uri,
+                    })
+                    formats.append(http_f)
+
+            last_stream_inf = {}
+
+    # Some audio-only formats only have a GROUP-ID without any other quality/bitrate/codec info
+    # Each audio GROUP-ID corresponds with one or more video formats' AUDIO attribute
+    # For sorting purposes, set source_preference based on the quality of the video formats they are grouped with
+    # See https://github.com/yt-dlp/yt-dlp/issues/11178
+    audio_groups_by_quality = orderedSet(f['_audio_group_id'] for f in sorted(
+        traversal.traverse_obj(formats, lambda _, v: v.get('vcodec') != 'none' and v['_audio_group_id']),
+        key=lambda x: (x.get('tbr') or 0, x.get('width') or 0)))
+    audio_quality_map = {
+        audio_groups_by_quality[0]: 'low',
+        audio_groups_by_quality[-1]: 'high',
+    } if len(audio_groups_by_quality) > 1 else None
+    audio_preference = qualities(audio_groups_by_quality)
+    for fmt in formats:
+        audio_group_id = fmt.pop('_audio_group_id', None)
+        if not audio_quality_map or not audio_group_id or fmt.get('vcodec') != 'none':
+            continue
+        # Use source_preference since quality and preference are set by params
+        fmt['source_preference'] = audio_preference(audio_group_id)
+        fmt['format_note'] = join_nonempty(
+            fmt.get('format_note'), audio_quality_map.get(audio_group_id), delim=', ')
+
+    return formats, subtitles
+
+
+def parse_m3u8_vod_duration(m3u8_vod, video_id):
+    if '#EXT-X-ENDLIST' not in m3u8_vod:
+        return None
+
+    return int(sum(
+        float(line[len('#EXTINF:'):].split(',')[0])
+        for line in m3u8_vod.splitlines() if line.startswith('#EXTINF:'))) or None
+
+@staticmethod
+def xpath_ns(path, namespace=None):
+    if not namespace:
+        return path
+    out = []
+    for c in path.split('/'):
+        if not c or c == '.':
+            out.append(c)
+        else:
+            out.append(f'{{{namespace}}}{c}')
+    return '/'.join(out)
+
+def parse_mpd_formats(*args, **kwargs):
+    fmts, _ = parse_mpd_formats_and_subtitles(*args, **kwargs)
+    return fmts
+
+def parse_mpd_formats_and_subtitles(*args, **kwargs):
+    periods = parse_mpd_periods(*args, **kwargs)
+    return merge_mpd_periods(periods)
+
+def merge_mpd_periods(periods):
+    """
+    Combine all formats and subtitles from an MPD manifest into a single list,
+    by concatenate streams with similar formats.
+    """
+    formats, subtitles = {}, {}
+    for period in periods:
+        for f in period['formats']:
+            assert 'is_dash_periods' not in f, 'format already processed'
+            f['is_dash_periods'] = True
+            format_key = tuple(v for k, v in f.items() if k not in (
+                ('format_id', 'fragments', 'manifest_stream_number')))
+            if format_key not in formats:
+                formats[format_key] = f
+            elif 'fragments' in f:
+                formats[format_key].setdefault('fragments', []).extend(f['fragments'])
+
+        for sub_lang, sub_info in period['subtitles'].items():
+            subtitles.setdefault(sub_lang, []).extend(sub_info)
+
+    return list(formats.values()), subtitles
+
+def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
+    """
+    Parse formats from MPD manifest.
+    References:
+     1. MPEG-DASH Standard, ISO/IEC 23009-1:2014(E),
+        http://standards.iso.org/ittf/PubliclyAvailableStandards/c065274_ISO_IEC_23009-1_2014.zip
+     2. https://en.wikipedia.org/wiki/Dynamic_Adaptive_Streaming_over_HTTP
+    """
+    if mpd_doc.get('type') == 'dynamic':
+        return [], {}
+
+    namespace = search_regex(r'(?i)^{([^}]+)?}MPD$', mpd_doc.tag, 'namespace', default=None)
+
+    def add_ns(path):
+        return xpath_ns(path, namespace)
+
+    def is_drm_protected(element):
+        return element.find(add_ns('ContentProtection')) is not None
+
+    def extract_multisegment_info(element, ms_parent_info):
+        ms_info = ms_parent_info.copy()
+
+        # As per [1, 5.3.9.2.2] SegmentList and SegmentTemplate share some
+        # common attributes and elements.  We will only extract relevant
+        # for us.
+        def extract_common(source):
+            segment_timeline = source.find(add_ns('SegmentTimeline'))
+            if segment_timeline is not None:
+                s_e = segment_timeline.findall(add_ns('S'))
+                if s_e:
+                    ms_info['total_number'] = 0
+                    ms_info['s'] = []
+                    for s in s_e:
+                        r = int(s.get('r', 0))
+                        ms_info['total_number'] += 1 + r
+                        ms_info['s'].append({
+                            't': int(s.get('t', 0)),
+                            # @d is mandatory (see [1, 5.3.9.6.2, Table 17, page 60])
+                            'd': int(s.attrib['d']),
+                            'r': r,
+                        })
+            start_number = source.get('startNumber')
+            if start_number:
+                ms_info['start_number'] = int(start_number)
+            timescale = source.get('timescale')
+            if timescale:
+                ms_info['timescale'] = int(timescale)
+            segment_duration = source.get('duration')
+            if segment_duration:
+                ms_info['segment_duration'] = float(segment_duration)
+
+        def extract_Initialization(source):
+            initialization = source.find(add_ns('Initialization'))
+            if initialization is not None:
+                ms_info['initialization_url'] = initialization.attrib['sourceURL']
+
+        segment_list = element.find(add_ns('SegmentList'))
+        if segment_list is not None:
+            extract_common(segment_list)
+            extract_Initialization(segment_list)
+            segment_urls_e = segment_list.findall(add_ns('SegmentURL'))
+            if segment_urls_e:
+                ms_info['segment_urls'] = [segment.attrib['media'] for segment in segment_urls_e]
+        else:
+            segment_template = element.find(add_ns('SegmentTemplate'))
+            if segment_template is not None:
+                extract_common(segment_template)
+                media = segment_template.get('media')
+                if media:
+                    ms_info['media'] = media
+                initialization = segment_template.get('initialization')
+                if initialization:
+                    ms_info['initialization'] = initialization
+                else:
+                    extract_Initialization(segment_template)
+        return ms_info
+
+    mpd_duration = parse_duration(mpd_doc.get('mediaPresentationDuration'))
+    stream_numbers = collections.defaultdict(int)
+    for period_idx, period in enumerate(mpd_doc.findall(add_ns('Period'))):
+        period_entry = {
+            'id': period.get('id', f'period-{period_idx}'),
+            'formats': [],
+            'subtitles': collections.defaultdict(list),
+        }
+        period_duration = parse_duration(period.get('duration')) or mpd_duration
+        period_ms_info = extract_multisegment_info(period, {
+            'start_number': 1,
+            'timescale': 1,
+        })
+        for adaptation_set in period.findall(add_ns('AdaptationSet')):
+            adaption_set_ms_info = extract_multisegment_info(adaptation_set, period_ms_info)
+            for representation in adaptation_set.findall(add_ns('Representation')):
+                representation_attrib = adaptation_set.attrib.copy()
+                representation_attrib.update(representation.attrib)
+                # According to [1, 5.3.7.2, Table 9, page 41], @mimeType is mandatory
+                mime_type = representation_attrib['mimeType']
+                content_type = representation_attrib.get('contentType', mime_type.split('/')[0])
+
+                codec_str = representation_attrib.get('codecs', '')
+                supplemental_codecs = representation_attrib.get(
+                    '{urn:scte:dash:scte214-extensions}supplementalCodecs')
+                # Some kind of binary subtitle found in some youtube livestreams
+                if mime_type == 'application/x-rawcc':
+                    codecs = {'scodec': codec_str}
+                else:
+                    codecs = parse_codecs(codec_str)
+                if content_type not in ('video', 'audio', 'text'):
+                    if mime_type in ('image/avif', 'image/jpeg'):
+                        content_type = mime_type
+                    elif codecs.get('vcodec', 'none') != 'none':
+                        content_type = 'video'
+                    elif codecs.get('acodec', 'none') != 'none':
+                        content_type = 'audio'
+                    elif codecs.get('scodec', 'none') != 'none':
+                        content_type = 'text'
+                    elif mimetype2ext(mime_type) in ('tt', 'dfxp', 'ttml', 'xml', 'json'):
+                        content_type = 'text'
+                    else:
+                        continue
+
+                base_url = ''
+                for element in (representation, adaptation_set, period, mpd_doc):
+                    base_url_e = element.find(add_ns('BaseURL'))
+                    if try_call(lambda: base_url_e.text) is not None:
+                        base_url = base_url_e.text + base_url
+                        if re.match(r'https?://', base_url):
+                            break
+                if mpd_base_url and base_url.startswith('/'):
+                    base_url = urllib.parse.urljoin(mpd_base_url, base_url)
+                elif mpd_base_url and not re.match(r'https?://', base_url):
+                    if not mpd_base_url.endswith('/'):
+                        mpd_base_url += '/'
+                    base_url = mpd_base_url + base_url
+                representation_id = representation_attrib.get('id')
+                lang = representation_attrib.get('lang')
+                url_el = representation.find(add_ns('BaseURL'))
+                filesize = int_or_none(url_el.attrib.get('{http://youtube.com/yt/2012/10/10}contentLength') if url_el is not None else None)
+                bandwidth = int_or_none(representation_attrib.get('bandwidth'))
+                if representation_id is not None:
+                    format_id = representation_id
+                else:
+                    format_id = content_type
+                if mpd_id:
+                    format_id = mpd_id + '-' + format_id
+                if content_type in ('video', 'audio'):
+                    f = {
+                        'format_id': format_id,
+                        'manifest_url': mpd_url,
+                        'ext': mimetype2ext(mime_type),
+                        'width': int_or_none(representation_attrib.get('width')),
+                        'height': int_or_none(representation_attrib.get('height')),
+                        'tbr': float_or_none(bandwidth, 1000),
+                        'asr': int_or_none(representation_attrib.get('audioSamplingRate')),
+                        'fps': int_or_none(representation_attrib.get('frameRate')),
+                        'language': lang if lang not in ('mul', 'und', 'zxx', 'mis') else None,
+                        'format_note': join_nonempty(f'DASH {content_type}', supplemental_codecs, delim=', '),
+                        'filesize': filesize,
+                        'container': mimetype2ext(mime_type) + '_dash',
+                        **codecs,
+                    }
+                elif content_type == 'text':
+                    f = {
+                        'ext': mimetype2ext(mime_type),
+                        'manifest_url': mpd_url,
+                        'filesize': filesize,
+                    }
+                elif content_type in ('image/avif', 'image/jpeg'):
+                    # See test case in VikiIE
+                    # https://www.viki.com/videos/1175236v-choosing-spouse-by-lottery-episode-1
+                    f = {
+                        'format_id': format_id,
+                        'ext': 'mhtml',
+                        'manifest_url': mpd_url,
+                        'format_note': f'DASH storyboards ({mimetype2ext(mime_type)})',
+                        'acodec': 'none',
+                        'vcodec': 'none',
+                    }
+                if is_drm_protected(adaptation_set) or is_drm_protected(representation):
+                    f['has_drm'] = True
+                representation_ms_info = extract_multisegment_info(representation, adaption_set_ms_info)
+
+                def prepare_template(template_name, identifiers):
+                    tmpl = representation_ms_info[template_name]
+                    if representation_id is not None:
+                        tmpl = tmpl.replace('$RepresentationID$', representation_id)
+                    # First of, % characters outside $...$ templates
+                    # must be escaped by doubling for proper processing
+                    # by % operator string formatting used further (see
+                    # https://github.com/ytdl-org/youtube-dl/issues/16867).
+                    t = ''
+                    in_template = False
+                    for c in tmpl:
+                        t += c
+                        if c == '$':
+                            in_template = not in_template
+                        elif c == '%' and not in_template:
+                            t += c
+                    # Next, $...$ templates are translated to their
+                    # %(...) counterparts to be used with % operator
+                    t = re.sub(r'\$({})\$'.format('|'.join(identifiers)), r'%(\1)d', t)
+                    t = re.sub(r'\$({})%([^$]+)\$'.format('|'.join(identifiers)), r'%(\1)\2', t)
+
+                    return t.replace('$$', '$')
+
+                # @initialization is a regular template like @media one
+                # so it should be handled just the same way (see
+                # https://github.com/ytdl-org/youtube-dl/issues/11605)
+                if 'initialization' in representation_ms_info:
+                    initialization_template = prepare_template(
+                        'initialization',
+                        # As per [1, 5.3.9.4.2, Table 15, page 54] $Number$ and
+                        # $Time$ shall not be included for @initialization thus
+                        # only $Bandwidth$ remains
+                        ('Bandwidth', ))
+                    representation_ms_info['initialization_url'] = initialization_template % {
+                        'Bandwidth': bandwidth,
+                    }
+
+                def location_key(location):
+                    return 'url' if re.match(r'https?://', location) else 'path'
+
+                if 'segment_urls' not in representation_ms_info and 'media' in representation_ms_info:
+
+                    media_template = prepare_template('media', ('Number', 'Bandwidth', 'Time'))
+                    media_location_key = location_key(media_template)
+
+                    # As per [1, 5.3.9.4.4, Table 16, page 55] $Number$ and $Time$
+                    # can't be used at the same time
+                    if '%(Number' in media_template and 's' not in representation_ms_info:
+                        segment_duration = None
+                        if 'total_number' not in representation_ms_info and 'segment_duration' in representation_ms_info:
+                            segment_duration = float_or_none(representation_ms_info['segment_duration'], representation_ms_info['timescale'])
+                            representation_ms_info['total_number'] = math.ceil(float_or_none(period_duration, segment_duration, default=0))
+                        representation_ms_info['fragments'] = [{
+                            media_location_key: media_template % {
+                                'Number': segment_number,
+                                'Bandwidth': bandwidth,
+                            },
+                            'duration': segment_duration,
+                        } for segment_number in range(
+                            representation_ms_info['start_number'],
+                            representation_ms_info['total_number'] + representation_ms_info['start_number'])]
+                    else:
+                        # $Number*$ or $Time$ in media template with S list available
+                        # Example $Number*$: http://www.svtplay.se/klipp/9023742/stopptid-om-bjorn-borg
+                        representation_ms_info['fragments'] = []
+                        segment_time = 0
+                        segment_d = None
+                        segment_number = representation_ms_info['start_number']
+
+                        def add_segment_url():
+                            segment_url = media_template % {
+                                'Time': segment_time,
+                                'Bandwidth': bandwidth,
+                                'Number': segment_number,
+                            }
+                            representation_ms_info['fragments'].append({
+                                media_location_key: segment_url,
+                                'duration': float_or_none(segment_d, representation_ms_info['timescale']),
+                            })
+
+                        for s in representation_ms_info['s']:
+                            segment_time = s.get('t') or segment_time
+                            segment_d = s['d']
+                            add_segment_url()
+                            segment_number += 1
+                            for _ in range(s.get('r', 0)):
+                                segment_time += segment_d
+                                add_segment_url()
+                                segment_number += 1
+                            segment_time += segment_d
+                elif 'segment_urls' in representation_ms_info and 's' in representation_ms_info:
+                    # No media template,
+                    # e.g. https://www.youtube.com/watch?v=iXZV5uAYMJI
+                    # or any YouTube dashsegments video
+                    fragments = []
+                    segment_index = 0
+                    timescale = representation_ms_info['timescale']
+                    for s in representation_ms_info['s']:
+                        duration = float_or_none(s['d'], timescale)
+                        for _ in range(s.get('r', 0) + 1):
+                            segment_uri = representation_ms_info['segment_urls'][segment_index]
+                            fragments.append({
+                                location_key(segment_uri): segment_uri,
+                                'duration': duration,
+                            })
+                            segment_index += 1
+                    representation_ms_info['fragments'] = fragments
+                elif 'segment_urls' in representation_ms_info:
+                    # Segment URLs with no SegmentTimeline
+                    # E.g. https://www.seznam.cz/zpravy/clanek/cesko-zasahne-vitr-o-sile-vichrice-muze-byt-i-zivotu-nebezpecny-39091
+                    # https://github.com/ytdl-org/youtube-dl/pull/14844
+                    fragments = []
+                    segment_duration = float_or_none(
+                        representation_ms_info['segment_duration'],
+                        representation_ms_info['timescale']) if 'segment_duration' in representation_ms_info else None
+                    for segment_url in representation_ms_info['segment_urls']:
+                        fragment = {
+                            location_key(segment_url): segment_url,
+                        }
+                        if segment_duration:
+                            fragment['duration'] = segment_duration
+                        fragments.append(fragment)
+                    representation_ms_info['fragments'] = fragments
+                # If there is a fragments key available then we correctly recognized fragmented media.
+                # Otherwise we will assume unfragmented media with direct access. Technically, such
+                # assumption is not necessarily correct since we may simply have no support for
+                # some forms of fragmented media renditions yet, but for now we'll use this fallback.
+                if 'fragments' in representation_ms_info:
+                    f.update({
+                        # NB: mpd_url may be empty when MPD manifest is parsed from a string
+                        'url': mpd_url or base_url,
+                        'fragment_base_url': base_url,
+                        'fragments': [],
+                        'protocol': 'mhtml' if mime_type in ('image/avif', 'image/jpeg') else 'http_dash_segments',
+                    })
+                    if 'initialization_url' in representation_ms_info:
+                        initialization_url = representation_ms_info['initialization_url']
+                        if not f.get('url'):
+                            f['url'] = initialization_url
+                        f['fragments'].append({location_key(initialization_url): initialization_url})
+                    f['fragments'].extend(representation_ms_info['fragments'])
+                    if not period_duration:
+                        period_duration = try_get(
+                            representation_ms_info,
+                            lambda r: sum(frag['duration'] for frag in r['fragments']), float)
+                else:
+                    # Assuming direct URL to unfragmented media.
+                    f['url'] = base_url
+                if content_type in ('video', 'audio', 'image/avif', 'image/jpeg'):
+                    f['manifest_stream_number'] = stream_numbers[f['url']]
+                    stream_numbers[f['url']] += 1
+                    period_entry['formats'].append(f)
+                elif content_type == 'text':
+                    period_entry['subtitles'][lang or 'und'].append(f)
+        yield period_entry
+
+def parse_ism_formats_and_subtitles(ism_doc, ism_url, ism_id=None):
+    """
+    Parse formats from ISM manifest.
+    References:
+     1. [MS-SSTR]: Smooth Streaming Protocol,
+        https://msdn.microsoft.com/en-us/library/ff469518.aspx
+    """
+    if ism_doc.get('IsLive') == 'TRUE':
+        return [], {}
+
+    duration = int(ism_doc.attrib['Duration'])
+    timescale = int_or_none(ism_doc.get('TimeScale')) or 10000000
+
+    formats = []
+    subtitles = {}
+    for stream in ism_doc.findall('StreamIndex'):
+        stream_type = stream.get('Type')
+        if stream_type not in ('video', 'audio', 'text'):
+            continue
+        url_pattern = stream.attrib['Url']
+        stream_timescale = int_or_none(stream.get('TimeScale')) or timescale
+        stream_name = stream.get('Name')
+        # IsmFD expects ISO 639 Set 2 language codes (3-character length)
+        # See: https://github.com/yt-dlp/yt-dlp/issues/11356
+        stream_language = stream.get('Language') or 'und'
+        if len(stream_language) != 3:
+            stream_language = ISO639Utils.short2long(stream_language) or 'und'
+        for track in stream.findall('QualityLevel'):
+            KNOWN_TAGS = {'255': 'AACL', '65534': 'EC-3'}
+            fourcc = track.get('FourCC') or KNOWN_TAGS.get(track.get('AudioTag'))
+            # TODO: add support for WVC1 and WMAP
+            if fourcc not in ('H264', 'AVC1', 'AACL', 'TTML', 'EC-3'):
+                continue
+            tbr = int(track.attrib['Bitrate']) // 1000
+            # [1] does not mention Width and Height attributes. However,
+            # they're often present while MaxWidth and MaxHeight are
+            # missing, so should be used as fallbacks
+            width = int_or_none(track.get('MaxWidth') or track.get('Width'))
+            height = int_or_none(track.get('MaxHeight') or track.get('Height'))
+            sampling_rate = int_or_none(track.get('SamplingRate'))
+
+            track_url_pattern = re.sub(r'{[Bb]itrate}', track.attrib['Bitrate'], url_pattern)
+            track_url_pattern = urllib.parse.urljoin(ism_url, track_url_pattern)
+
+            fragments = []
+            fragment_ctx = {
+                'time': 0,
+            }
+            stream_fragments = stream.findall('c')
+            for stream_fragment_index, stream_fragment in enumerate(stream_fragments):
+                fragment_ctx['time'] = int_or_none(stream_fragment.get('t')) or fragment_ctx['time']
+                fragment_repeat = int_or_none(stream_fragment.get('r')) or 1
+                fragment_ctx['duration'] = int_or_none(stream_fragment.get('d'))
+                if not fragment_ctx['duration']:
+                    try:
+                        next_fragment_time = int(stream_fragment[stream_fragment_index + 1].attrib['t'])
+                    except IndexError:
+                        next_fragment_time = duration
+                    fragment_ctx['duration'] = (next_fragment_time - fragment_ctx['time']) / fragment_repeat
+                for _ in range(fragment_repeat):
+                    fragments.append({
+                        'url': re.sub(r'{start[ _]time}', str(fragment_ctx['time']), track_url_pattern),
+                        'duration': fragment_ctx['duration'] / stream_timescale,
+                    })
+                    fragment_ctx['time'] += fragment_ctx['duration']
+
+            if stream_type == 'text':
+                subtitles.setdefault(stream_language, []).append({
+                    'ext': 'ismt',
+                    'protocol': 'ism',
+                    'url': ism_url,
+                    'manifest_url': ism_url,
+                    'fragments': fragments,
+                    '_download_params': {
+                        'stream_type': stream_type,
+                        'duration': duration,
+                        'timescale': stream_timescale,
+                        'fourcc': fourcc,
+                        'language': stream_language,
+                        'codec_private_data': track.get('CodecPrivateData'),
+                    },
+                })
+            elif stream_type in ('video', 'audio'):
+                formats.append({
+                    'format_id': join_nonempty(ism_id, stream_name, tbr),
+                    'url': ism_url,
+                    'manifest_url': ism_url,
+                    'ext': 'ismv' if stream_type == 'video' else 'isma',
+                    'width': width,
+                    'height': height,
+                    'tbr': tbr,
+                    'asr': sampling_rate,
+                    'vcodec': 'none' if stream_type == 'audio' else fourcc,
+                    'acodec': 'none' if stream_type == 'video' else fourcc,
+                    'protocol': 'ism',
+                    'fragments': fragments,
+                    'has_drm': ism_doc.find('Protection') is not None,
+                    'language': stream_language,
+                    'audio_channels': int_or_none(track.get('Channels')),
+                    '_download_params': {
+                        'stream_type': stream_type,
+                        'duration': duration,
+                        'timescale': stream_timescale,
+                        'width': width or 0,
+                        'height': height or 0,
+                        'fourcc': fourcc,
+                        'language': stream_language,
+                        'codec_private_data': track.get('CodecPrivateData'),
+                        'sampling_rate': sampling_rate,
+                        'channels': int_or_none(track.get('Channels', 2)),
+                        'bits_per_sample': int_or_none(track.get('BitsPerSample', 16)),
+                        'nal_unit_length_field': int_or_none(track.get('NALUnitLengthField', 4)),
+                    },
+                })
+    return formats, subtitles
