@@ -20,7 +20,3 @@ og_title = deeputils.og_search_title(html)
 print(f'Video Title: {og_title}')
 
 ```
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
