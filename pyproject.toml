@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "deeputils"
+name = "omnitoolkit"
 authors = [
     {name = "0xvd", email = "0xvd12@gmail.com"},
 ]
@@ -43,16 +43,16 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/0xvd/deeputils"
-Tracker = "https://github.com/0xvd/deeputils/issues"
+Repository = "https://github.com/0xvd/omnitoolkit"
+Tracker = "https://github.com/0xvd/omnitoolkit/issues"
 
 [tool.hatch.version]
-path = "deeputils/version.py"
+path = "omnitoolkit/version.py"
 pattern = "__version__ = '(?P<version>[^']+)'"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/deeputils",
+    "/omnitoolkit",
     "/Changelog.md",
     "/LICENSE",
     "/pyproject.toml",
@@ -60,9 +60,9 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["deeputils"]
+packages = ["omnitoolkit"]
 exclude = [
-    "/deeputils/**/*.md",
+    "/omnitoolkit/**/*.md",
 ]
 
 [tool.hatch.envs.default]

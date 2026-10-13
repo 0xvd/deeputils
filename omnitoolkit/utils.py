@@ -249,7 +249,7 @@ def xpath_element(node, xpath, name=None, fatal=False, default=NO_DEFAULT):
             return default
         elif fatal:
             name = xpath if name is None else name
-            raise DeepError(f'Could not find XML element {name}')
+            raise OmniError(f'Could not find XML element {name}')
         else:
             return None
     return n
@@ -264,7 +264,7 @@ def xpath_text(node, xpath, name=None, fatal=False, default=NO_DEFAULT):
             return default
         elif fatal:
             name = xpath if name is None else name
-            raise DeepError(f'Could not find XML element\'s text {name}')
+            raise OmniError(f'Could not find XML element\'s text {name}')
         else:
             return None
     return n.text
@@ -277,7 +277,7 @@ def xpath_attr(node, xpath, key, name=None, fatal=False, default=NO_DEFAULT):
             return default
         elif fatal:
             name = f'{xpath}[@{key}]' if name is None else name
-            raise DeepError(f'Could not find XML attribute {name}')
+            raise OmniError(f'Could not find XML attribute {name}')
         else:
             return None
     return n.attrib[key]
@@ -832,7 +832,7 @@ def bug_reports_message(before=';'):
 
     return (before + ' ' if before else '') + msg
 
-class DeepError(Exception):
+class OmniError(Exception):
     """Error during info extraction."""
 
     def __init__(self, msg, tb=None, expected=False, cause=None, ie=None):
@@ -845,7 +845,7 @@ class DeepError(Exception):
         self.cause = cause
         self.ie = ie
         self.exc_info = sys.exc_info()  # preserve original exception
-        if isinstance(self.exc_info[1], DeepError):
+        if isinstance(self.exc_info[1], OmniError):
             self.exc_info = self.exc_info[1].exc_info
         super().__init__(self.__msg)
 
@@ -869,11 +869,11 @@ class DeepError(Exception):
             self.msg = self.__msg or type(self).__name__
             self.args = (self.msg, )  # Cannot be property
 
-class RegexNotFoundError(DeepError):
+class RegexNotFoundError(OmniError):
     """Error when a regex didn't match"""
     pass
 
-class XAttrMetadataError(DeepError):
+class XAttrMetadataError(OmniError):
     def __init__(self, code=None, msg='Unknown error'):
         super().__init__(msg)
         self.code = code
@@ -889,11 +889,11 @@ class XAttrMetadataError(DeepError):
             self.reason = 'NOT_SUPPORTED'
 
 
-class XAttrUnavailableError(DeepError):
+class XAttrUnavailableError(OmniError):
     pass
 
 
-class UnsafeExecExpansionError(DeepError):
+class UnsafeExecExpansionError(OmniError):
     pass
 
 
@@ -3838,7 +3838,7 @@ class RetryManager:
 
         if not count:
             return warn(e)
-        elif isinstance(e, DeepError):
+        elif isinstance(e, OmniError):
             e = remove_end(str_or_none(e.cause) or e.orig_msg, '.')
         warn(f'{e}. Retrying{format_field(suffix, None, " %s")} ({count}/{retries})...')
 
@@ -4235,7 +4235,7 @@ def search_json(start_pattern, string, *, end_pattern='',
 
     try:
         return parse_json(json_string, ignore_extra=True, **kwargs)
-    except DeepError:
+    except OmniError:
         return default
 
 def html_search_regex(pattern, string, name, default=NO_DEFAULT, fatal=True, flags=0, group=None):
@@ -4252,7 +4252,7 @@ def parse_json(json_string, transform_source=None, **parser_kwargs):
         return json.loads(
             json_string, cls=LenientJSONDecoder, strict=False, transform_source=transform_source, **parser_kwargs)
     except ValueError as ve:
-        raise DeepError('Failed to parse JSON', ve)
+        raise OmniError('Failed to parse JSON', ve)
 
 def og_regexes(prop):
     content_re = r'content=(?:"([^"]+?)"|\'([^\']+?)\'|\s*([^\s"\'=<>`]+?)(?=\s|/?>))'
@@ -4422,7 +4422,7 @@ def resolve_nuxt_array(array,*, fatal=True, default=NO_DEFAULT):
     if not isinstance(array, list) or not array:
         error_msg = 'Unable to resolve Nuxt JSON data: invalid input'
         if fatal:
-            raise DeepError(error_msg)
+            raise OmniError(error_msg)
         return {} if default is NO_DEFAULT else default
 
     def indirect_reviver(data):
@@ -4446,7 +4446,7 @@ def resolve_nuxt_array(array,*, fatal=True, default=NO_DEFAULT):
         try:
             error_msg = f'Error resolving Nuxt JSON: {gen.send(None)}'
             if fatal:
-                raise DeepError(error_msg)
+                raise OmniError(error_msg)
         except StopIteration as error:
             return error.value or ({} if default is NO_DEFAULT else default)
 

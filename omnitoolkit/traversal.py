@@ -17,7 +17,7 @@ import xml.etree.ElementTree
 from .utils import (
     IDENTITY,
     NO_DEFAULT,
-    DeepError,
+    OmniError,
     LazyList,
     get_elements_html_by_class,
     get_elements_html_by_attribute,
@@ -308,7 +308,7 @@ def traverse_obj(
         except _RequiredError as e:
             if is_last:
                 # Reraise to get cleaner stack trace
-                raise DeepError(e.orig_msg, expected=e.expected) from None
+                raise OmniError(e.orig_msg, expected=e.expected) from None
 
     return None if default is NO_DEFAULT else default
 
@@ -327,7 +327,7 @@ def require(name, /, *, expected=False):
     return func
 
 
-class _RequiredError(DeepError):
+class _RequiredError(OmniError):
     pass
 
 
