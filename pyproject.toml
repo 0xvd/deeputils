@@ -37,6 +37,11 @@ classifiers = [
 dynamic = ["version"]
 dependencies = []
 
+[project]
+dependencies = [
+  "requests>=2.32.2",
+]
+
 [project.urls]
 Repository = "https://github.com/0xvd/deeputils"
 Tracker = "https://github.com/0xvd/deeputils/issues"
