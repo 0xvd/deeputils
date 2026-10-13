@@ -15,7 +15,6 @@ import errno
 import functools
 import hashlib
 import hmac
-import typing
 import html.entities
 import html.parser
 import inspect
@@ -38,26 +37,29 @@ import sys
 import time
 import traceback
 import types
+import typing
 import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree
-import xml.etree.ElementTree
 
 from . import traversal
 
-__name__ = __name__.rsplit('.', 1)[0]  # noqa: A001 # Pretend to be the parent module
+__name__ = __name__.rsplit('.', 1)[0]  # Pretend to be the parent module
 
 
 class NO_DEFAULT:
     pass
 
+
 class HTMLParseError(ValueError):
     pass
 
+
 def IDENTITY(x):
     return x
+
 
 _ARRAY_TYPE_LOOKUP = {
     'Int8Array': 'b',
@@ -195,6 +197,7 @@ def preferredencoding():
 
     return pref
 
+
 def partial_application(func):
     sig = inspect.signature(func)
     required_args = [
@@ -318,14 +321,16 @@ def get_element_html_by_attribute(attribute, value, html, **kargs):
 def get_elements_by_class(class_name, html, **kargs):
     """Return the content of all tags with the specified class in the passed HTML document as a list"""
     return get_elements_by_attribute(
-        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)}(?=[\'"\s])[^\'"]*',
+        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)
+                                        }(?=[\'"\s])[^\'"]*',
         html, escape_value=False)
 
 
 def get_elements_html_by_class(class_name, html):
     """Return the html of all tags with the specified class in the passed HTML document as a list"""
     return get_elements_html_by_attribute(
-        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)}(?=[\'"\s])[^\'"]*',
+        'class', rf'[^\'"]*(?<=[\'"\s]){re.escape(class_name)
+                                        }(?=[\'"\s])[^\'"]*',
         html, escape_value=False)
 
 
@@ -358,10 +363,12 @@ def get_elements_text_and_html_by_attribute(attribute, value, html, *, tag=r'[\w
         '''
 
     for m in re.finditer(partial_element_re, html):
-        content, whole = get_element_text_and_html_by_tag(m.group('tag'), html[m.start():])
+        content, whole = get_element_text_and_html_by_tag(
+            m.group('tag'), html[m.start():])
 
         yield (
-            unescapeHTML(re.sub(r'^(?P<q>["\'])(?P<content>.*)(?P=q)$', r'\g<content>', content, flags=re.DOTALL)),
+            unescapeHTML(re.sub(
+                r'^(?P<q>["\'])(?P<content>.*)(?P=q)$', r'\g<content>', content, flags=re.DOTALL)),
             whole,
         )
 
@@ -403,7 +410,8 @@ class HTMLBreakOnClosingTagParser(html.parser.HTMLParser):
             if inner_tag == tag:
                 break
         else:
-            raise ValueError(f'matching opening tag for closing {tag} tag not found')
+            raise ValueError(f'matching opening tag for closing {
+                             tag} tag not found')
         if not self.tagstack:
             raise self.HTMLBreakOnClosingTagException
 
@@ -555,7 +563,8 @@ class LenientJSONDecoder(json.JSONDecoder):
                     s = self._close_object(e)
                     if s is not None:
                         continue
-                raise type(e)(f'{e.msg} in {s[e.pos - 10:e.pos + 10]!r}', s, e.pos)
+                raise type(e)(f'{e.msg} in {
+                    s[e.pos - 10:e.pos + 10]!r}', s, e.pos)
         assert False, 'Too many attempts to decode JSON'
 
 
@@ -600,12 +609,16 @@ def sanitize_filename(s, restricted=False, is_id=NO_DEFAULT):
     # Replace look-alike Unicode glyphs
     if restricted and (is_id is NO_DEFAULT or not is_id):
         s = unicodedata.normalize('NFKC', s)
-    s = re.sub(r'[0-9]+(?::[0-9]+)+', lambda m: m.group(0).replace(':', '_'), s)  # Handle timestamps
+    # Handle timestamps
+    s = re.sub(r'[0-9]+(?::[0-9]+)+',
+               lambda m: m.group(0).replace(':', '_'), s)
     result = ''.join(map(replace_insane, s))
     if is_id is NO_DEFAULT:
-        result = re.sub(r'(\0.)(?:(?=\1)..)+', r'\1', result)  # Remove repeated substitute chars
+        # Remove repeated substitute chars
+        result = re.sub(r'(\0.)(?:(?=\1)..)+', r'\1', result)
         STRIP_RE = r'(?:\0.|[ _-])*'
-        result = re.sub(f'^\0.{STRIP_RE}|{STRIP_RE}\0.$', '', result)  # Remove substitute chars from start/end
+        # Remove substitute chars from start/end
+        result = re.sub(f'^\0.{STRIP_RE}|{STRIP_RE}\0.$', '', result)
     result = result.replace('\0', '') or '_'
 
     if not is_id:
@@ -704,6 +717,7 @@ def extract_basic_auth(url):
         ('{}:{}'.format(parts.username, parts.password or '')).encode())
     return url, f'Basic {auth_payload.decode()}'
 
+
 if os.name in ('nt', 'ce'):
     def _expanduser(path):
         HOME = os.environ.get('HOME')
@@ -714,10 +728,12 @@ if os.name in ('nt', 'ce'):
         i = path.replace('\\', '/', 1).find('/')  # ~user
         if i < 0:
             i = len(path)
-        userhome = os.path.join(os.path.dirname(HOME), path[1:i]) if i > 1 else HOME
+        userhome = os.path.join(os.path.dirname(
+            HOME), path[1:i]) if i > 1 else HOME
         return userhome + path[i:]
 else:
     _expanduser = os.path.expanduser
+
 
 def expand_path(s):
     """Expand shell variables and ~"""
@@ -799,7 +815,8 @@ def encodeArgument(s):
     return s if isinstance(s, str) else s.decode('ascii')
 
 
-_timetuple = collections.namedtuple('Time', ('hours', 'minutes', 'seconds', 'milliseconds'))
+_timetuple = collections.namedtuple(
+    'Time', ('hours', 'minutes', 'seconds', 'milliseconds'))
 
 
 def timetuple_from_msec(msec):
@@ -812,7 +829,8 @@ def timetuple_from_msec(msec):
 def formatSeconds(secs, delim=':', msec=False):
     time = timetuple_from_msec(secs * 1000)
     if time.hours:
-        ret = '%d%s%02d%s%02d' % (time.hours, delim, time.minutes, delim, time.seconds)
+        ret = '%d%s%02d%s%02d' % (
+            time.hours, delim, time.minutes, delim, time.seconds)
     elif time.minutes:
         ret = '%d%s%02d' % (time.minutes, delim, time.seconds)
     else:
@@ -831,6 +849,7 @@ def bug_reports_message(before=';'):
         msg = msg[0].title() + msg[1:]
 
     return (before + ' ' if before else '') + msg
+
 
 class OmniError(Exception):
     """Error during info extraction."""
@@ -869,9 +888,10 @@ class OmniError(Exception):
             self.msg = self.__msg or type(self).__name__
             self.args = (self.msg, )  # Cannot be property
 
+
 class RegexNotFoundError(OmniError):
     """Error when a regex didn't match"""
-    pass
+
 
 class XAttrMetadataError(OmniError):
     def __init__(self, code=None, msg='Unknown error'):
@@ -900,11 +920,13 @@ class UnsafeExecExpansionError(OmniError):
 def is_path_like(f):
     return isinstance(f, (str, bytes, os.PathLike))
 
+
 def compat_datetime_from_timestamp(timestamp):
     # Calling dt.datetime.fromtimestamp with negative timestamps throws error in Windows
     # Ref: https://github.com/yt-dlp/yt-dlp/issues/5185, https://github.com/python/cpython/issues/81708,
     # https://github.com/yt-dlp/yt-dlp/issues/6706#issuecomment-1496842642
     return (dt.datetime.fromtimestamp(0, dt.timezone.utc) + dt.timedelta(seconds=timestamp))
+
 
 def extract_timezone(date_str, default=None):
     m = re.search(
@@ -975,7 +997,8 @@ def unified_strdate(date_str, day_first=True):
 
     for expression in date_formats(day_first):
         with contextlib.suppress(ValueError):
-            upload_date = dt.datetime.strptime(date_str, expression).strftime('%Y%m%d')
+            upload_date = dt.datetime.strptime(
+                date_str, expression).strftime('%Y%m%d')
     if upload_date is None:
         timetuple = email.utils.parsedate_tz(date_str)
         if timetuple:
@@ -1006,13 +1029,15 @@ def unified_timestamp(date_str, day_first=True, tz_offset=0):
         date_str = date_str[:-len(m.group('tz'))]
 
     # Python only supports microseconds, so remove nanoseconds
-    m = re.search(r'^([0-9]{4,}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{6})[0-9]+$', date_str)
+    m = re.search(
+        r'^([0-9]{4,}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\.[0-9]{6})[0-9]+$', date_str)
     if m:
         date_str = m.group(1)
 
     for expression in date_formats(day_first):
         with contextlib.suppress(ValueError):
-            dt_ = dt.datetime.strptime(date_str, expression) - timezone + dt.timedelta(hours=pm_delta)
+            dt_ = dt.datetime.strptime(
+                date_str, expression) - timezone + dt.timedelta(hours=pm_delta)
             return calendar.timegm(dt_.timetuple())
 
     timetuple = email.utils.parsedate_tz(date_str)
@@ -1032,6 +1057,7 @@ def determine_ext(url, default_ext='unknown_video'):
         return guess.rstrip('/')
     else:
         return default_ext
+
 
 def datetime_from_str(date_str, precision='auto', format='%Y%m%d'):
     R"""
@@ -1057,10 +1083,12 @@ def datetime_from_str(date_str, precision='auto', format='%Y%m%d'):
         date_str)
     if match is not None:
         start_time = datetime_from_str(match.group('start'), precision, format)
-        time = int(match.group('time')) * (-1 if match.group('sign') == '-' else 1)
+        time = int(match.group('time')) * \
+            (-1 if match.group('sign') == '-' else 1)
         unit = match.group('unit')
         if unit == 'month' or unit == 'year':
-            new_date = datetime_add_months(start_time, time * 12 if unit == 'year' else time)
+            new_date = datetime_add_months(
+                start_time, time * 12 if unit == 'year' else time)
             unit = 'day'
         else:
             if unit == 'week':
@@ -1110,8 +1138,9 @@ def datetime_round(dt_, precision='day'):
         'minute': 60,
         'second': 1,
     }
-    roundto = lambda x, n: ((x + n / 2) // n) * n
-    timestamp = roundto(calendar.timegm(dt_.timetuple()) + dt_.microsecond / time_scale, unit_seconds[precision])
+    def roundto(x, n): return ((x + n / 2) // n) * n
+    timestamp = roundto(calendar.timegm(dt_.timetuple()) +
+                        dt_.microsecond / time_scale, unit_seconds[precision])
     return compat_datetime_from_timestamp(timestamp)
 
 
@@ -1139,7 +1168,8 @@ class DateRange:
         else:
             self.end = dt.datetime.max.date()
         if self.start > self.end:
-            raise ValueError(f'Date range: "{self}" , the start date must be before the end date')
+            raise ValueError(
+                f'Date range: "{self}" , the start date must be before the end date')
 
     @classmethod
     def day(cls, day):
@@ -1169,7 +1199,8 @@ def system_identifier():
     if python_implementation == 'PyPy' and hasattr(sys, 'pypy_version_info'):
         python_implementation += ' version %d.%d.%d' % sys.pypy_version_info[:3]
     libc_ver = []
-    with contextlib.suppress(OSError):  # We may not have access to the executable
+    # We may not have access to the executable
+    with contextlib.suppress(OSError):
         libc_ver = platform.libc_ver()
 
     return 'Python {} ({} {} {}) - {} ({}{})'.format(
@@ -1182,13 +1213,15 @@ def system_identifier():
         format_field(join_nonempty(*libc_ver, delim=' '), None, ', %s'),
     )
 
+
 def format_decimal_suffix(num, fmt='%d%s', *, factor=1000):
     """ Formats numbers with decimal sufixes like K, M, etc """
     num, factor = float_or_none(num), float(factor)
     if num is None or num < 0:
         return None
     POSSIBLE_SUFFIXES = 'kMGTPEZY'
-    exponent = 0 if num == 0 else min(int(math.log(num, factor)), len(POSSIBLE_SUFFIXES))
+    exponent = 0 if num == 0 else min(
+        int(math.log(num, factor)), len(POSSIBLE_SUFFIXES))
     suffix = ['', *POSSIBLE_SUFFIXES][exponent]
     if factor == 1024:
         suffix = {'k': 'Ki', '': ''}.get(suffix, f'{suffix}i')
@@ -1328,7 +1361,8 @@ def parse_resolution(s, *, lenient=False, parse_fps=False):
     if lenient:
         mobj = re.search(r'(?P<w>\d+)\s*[xX×,]\s*(?P<h>\d+)', s)
     else:
-        mobj = re.search(r'(?<![a-zA-Z0-9])(?P<w>\d+)\s*[xX×,]\s*(?P<h>\d+)(?![a-zA-Z0-9])', s)
+        mobj = re.search(
+            r'(?<![a-zA-Z0-9])(?P<w>\d+)\s*[xX×,]\s*(?P<h>\d+)(?![a-zA-Z0-9])', s)
     if mobj:
         return {
             'width': int(mobj.group('w')),
@@ -1336,7 +1370,8 @@ def parse_resolution(s, *, lenient=False, parse_fps=False):
         }
 
     fps_suffix = r'(?P<fps>\d{2,3})?'
-    mobj = re.search(rf'(?<![a-zA-Z0-9])(?P<height>\d+)[pPiI]{fps_suffix}(?![a-zA-Z0-9])', s)
+    mobj = re.search(
+        rf'(?<![a-zA-Z0-9])(?P<height>\d+)[pPiI]{fps_suffix}(?![a-zA-Z0-9])', s)
     scale = 1
     if not mobj:
         mobj = re.search(rf'\b(?P<height>[48])[kK]{fps_suffix}\b', s)
@@ -1549,7 +1584,8 @@ def parse_duration(s):
             (?P<ms>[.:][0-9]+)?Z?$
         ''', s)
     if m:
-        days, hours, mins, secs, ms = m.group('days', 'hours', 'mins', 'secs', 'ms')
+        days, hours, mins, secs, ms = m.group(
+            'days', 'hours', 'mins', 'secs', 'ms')
     else:
         m = re.match(
             r'''(?ix)(?:P?
@@ -1578,7 +1614,8 @@ def parse_duration(s):
         if m:
             days, hours, mins, secs, ms = m.groups()
         else:
-            m = re.match(r'(?i)(?:(?P<hours>[0-9.]+)\s*(?:hours?)|(?P<mins>[0-9.]+)\s*(?:mins?\.?|minutes?)\s*)Z?$', s)
+            m = re.match(
+                r'(?i)(?:(?P<hours>[0-9.]+)\s*(?:hours?)|(?P<mins>[0-9.]+)\s*(?:mins?\.?|minutes?)\s*)Z?$', s)
             if m:
                 hours, mins = m.groups()
             else:
@@ -1590,6 +1627,7 @@ def parse_duration(s):
         (days, 86400), (hours, 3600), (mins, 60), (secs, 1), (ms, 1)))
 
     return int(total) if total.is_integer() else total
+
 
 def uppercase_escape(s):
     unicode_escape = codecs.getdecoder('unicode_escape')
@@ -1679,7 +1717,8 @@ def multipart_encode(data, boundary=None):
 
     while True:
         if boundary is None:
-            boundary = '---------------' + str(random.randrange(0x0fffffff, 0xffffffff))
+            boundary = '---------------' + \
+                str(random.randrange(0x0fffffff, 0xffffffff))
 
         try:
             out, content_type = _multipart_encode_impl(data, boundary)
@@ -1758,7 +1797,7 @@ TV_PARENTAL_GUIDELINES = {
 
 def parse_age_limit(s):
     # isinstance(False, int) is True. So type() must be used instead
-    if type(s) is int:  # noqa: E721
+    if type(s) is int:
         return s if 0 <= s <= 21 else None
     elif not isinstance(s, str):
         return None
@@ -1768,7 +1807,8 @@ def parse_age_limit(s):
     s = s.upper()
     if s in US_RATINGS:
         return US_RATINGS[s]
-    m = re.match(r'^TV[_-]?({})$'.format('|'.join(k[3:] for k in TV_PARENTAL_GUIDELINES)), s)
+    m = re.match(r'^TV[_-]?({})$'.format('|'.join(k[3:]
+                 for k in TV_PARENTAL_GUIDELINES)), s)
     if m:
         return TV_PARENTAL_GUIDELINES['TV-' + m.group(1)]
     return None
@@ -1821,7 +1861,8 @@ def js_to_json(code, vars={}, *, strict=False):
             return ''
 
         if v[0] in STRING_QUOTES:
-            v = re.sub(r'(?s)\${([^}]+)}', template_substitute, v[1:-1]) if v[0] == '`' else v[1:-1]
+            v = re.sub(r'(?s)\${([^}]+)}', template_substitute,
+                       v[1:-1]) if v[0] == '`' else v[1:-1]
             escaped = re.sub(r'(?s)(")|\\(.)', process_escape, v)
             return f'"{escaped}"'
 
@@ -1852,9 +1893,11 @@ def js_to_json(code, vars={}, *, strict=False):
     code = re.sub(r'new Map\((\[.*?\])?\)', create_map, code)
     if not strict:
         code = re.sub(rf'new Date\(({STRING_RE})\)', r'\g<1>', code)
-        code = re.sub(r'new \w+\((.*?)\)', lambda m: json.dumps(m.group(0)), code)
+        code = re.sub(r'new \w+\((.*?)\)',
+                      lambda m: json.dumps(m.group(0)), code)
         code = re.sub(r'parseInt\([^\d]+(\d+)[^\d]+\)', r'\1', code)
-        code = re.sub(r'\(function\([^)]*\)\s*\{[^}]*\}\s*\)\s*\(\s*(["\'][^)]*["\'])\s*\)', r'\1', code)
+        code = re.sub(
+            r'\(function\([^)]*\)\s*\{[^}]*\}\s*\)\s*\(\s*(["\'][^)]*["\'])\s*\)', r'\1', code)
 
     return re.sub(rf'''(?sx)
         {STRING_RE}|
@@ -1878,7 +1921,8 @@ def qualities(quality_ids):
     return q
 
 
-POSTPROCESS_WHEN = ('pre_process', 'after_filter', 'video', 'before_dl', 'post_process', 'after_move', 'after_video', 'playlist')
+POSTPROCESS_WHEN = ('pre_process', 'after_filter', 'video', 'before_dl',
+                    'post_process', 'after_move', 'after_video', 'playlist')
 
 
 DEFAULT_OUTTMPL = {
@@ -1941,6 +1985,7 @@ def is_outdated_version(version, limit, assume_new=True):
         return version_tuple(version) < version_tuple(limit)
     except ValueError:
         return not assume_new
+
 
 def error_to_str(err):
     return f'{type(err).__name__}: {err}'
@@ -2035,7 +2080,8 @@ def mimetype2ext(mt, default=NO_DEFAULT):
     mimetype = mt.partition(';')[0].strip().lower()
     _, _, subtype = mimetype.rpartition('/')
 
-    ext = traversal.traverse_obj(MAP, mimetype, subtype, subtype.rsplit('+')[-1])
+    ext = traversal.traverse_obj(
+        MAP, mimetype, subtype, subtype.rsplit('+')[-1])
     if ext:
         return ext
     elif default is not NO_DEFAULT:
@@ -2059,7 +2105,8 @@ def parse_codecs(codecs_str):
         str.strip, codecs_str.strip().strip(',').split(','))))
     vcodec, acodec, scodec, hdr = None, None, None, None
     for full_codec in split_codecs:
-        full_codec = re.sub(r'^([^.]+)', lambda m: m.group(1).lower(), full_codec)
+        full_codec = re.sub(
+            r'^([^.]+)', lambda m: m.group(1).lower(), full_codec)
         parts = re.sub(r'0+(?=\d)', '', full_codec).split('.')
         if parts[0] in ('avc1', 'avc2', 'avc3', 'avc4', 'vp9', 'vp8', 'hev1', 'hev2',
                         'h263', 'h264', 'mp4v', 'hvc1', 'av1', 'theora', 'dvh1', 'dvhe'):
@@ -2068,9 +2115,7 @@ def parse_codecs(codecs_str):
             vcodec = full_codec
             if parts[0] in ('dvh1', 'dvhe'):
                 hdr = 'DV'
-            elif parts[0] == 'av1' and traversal.traverse_obj(parts, 3) == '10':
-                hdr = 'HDR10'
-            elif parts[:2] == ['vp9', '2']:
+            elif parts[0] == 'av1' and traversal.traverse_obj(parts, 3) == '10' or parts[:2] == ['vp9', '2']:
                 hdr = 'HDR10'
         elif parts[0] in ('flac', 'mp4a', 'opus', 'vorbis', 'mp3', 'aac', 'ac-4',
                           'ac-3', 'ec-3', 'eac3', 'dtsc', 'dtse', 'dtsh', 'dtsl'):
@@ -2202,6 +2247,7 @@ def determine_protocol(info_dict):
 
     return urllib.parse.urlparse(url).scheme
 
+
 def parse_dfxp_time_expr(time_expr):
     if not time_expr:
         return
@@ -2324,7 +2370,8 @@ def dfxp2srt(dfxp_data):
 
     # Fix UTF-8 encoded file wrongly marked as UTF-16. See https://github.com/yt-dlp/yt-dlp/issues/6543#issuecomment-1477169870
     # This will not trigger false positives since only UTF-8 text is being replaced
-    dfxp_data = dfxp_data.replace(b'encoding=\'UTF-16\'', b'encoding=\'UTF-8\'')
+    dfxp_data = dfxp_data.replace(
+        b'encoding=\'UTF-16\'', b'encoding=\'UTF-8\'')
 
     def parse_node(node):
         target = TTMLPElementParser()
@@ -3250,14 +3297,16 @@ def pkcs1pad(data, length):
     if len(data) > length - 11:
         raise ValueError('Input data too long for EME-PKCS1-v1_5 encoding')
 
-    pseudo_random = [secrets.randbelow(255) + 1 for _ in range(length - len(data) - 3)]
+    pseudo_random = [secrets.randbelow(
+        255) + 1 for _ in range(length - len(data) - 3)]
     return [0, 2, *pseudo_random, 0, *data]
 
 
 def _base_n_table(n, table):
     if not table and not n:
         raise ValueError('Either table or n must be specified')
-    table = (table or '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')[:n]
+    table = (
+        table or '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')[:n]
 
     if n and n != len(table):
         raise ValueError(f'base {n} exceeds table length {len(table)}')
@@ -3316,8 +3365,10 @@ def caesar(s, alphabet, shift):
 def rot47(s):
     return caesar(s, r'''!"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~''', 47)
 
+
 def urshift(val, n):
     return val >> n if val >= 0 else (val + 0x100000000) >> n
+
 
 def random_birthday(year_field, month_field, day_field):
     start_date = dt.date(1950, 1, 1)
@@ -3396,7 +3447,8 @@ def iri_to_uri(iri, *, allowed_schemes=('http', 'https')):
     iri_parts = urllib.parse.urlparse(iri)
 
     if iri_parts.scheme not in allowed_schemes:
-        raise ValueError(f'"{iri_parts.scheme}" is not in allowed_schemes: {", ".join(allowed_schemes)}')
+        raise ValueError(f'"{iri_parts.scheme}" is not in allowed_schemes: {
+                         ", ".join(allowed_schemes)}')
 
     if '[' in iri_parts.netloc:
         raise ValueError('IPv6 URIs are not, yet, supported.')
@@ -3406,12 +3458,15 @@ def iri_to_uri(iri, *, allowed_schemes=('http', 'https')):
 
     net_location = ''
     if iri_parts.username:
-        net_location += urllib.parse.quote(iri_parts.username, safe=r"!$%&'()*+,~")
+        net_location += urllib.parse.quote(iri_parts.username,
+                                           safe=r"!$%&'()*+,~")
         if iri_parts.password is not None:
-            net_location += ':' + urllib.parse.quote(iri_parts.password, safe=r"!$%&'()*+,~")
+            net_location += ':' + \
+                urllib.parse.quote(iri_parts.password, safe=r"!$%&'()*+,~")
         net_location += '@'
 
-    net_location += iri_parts.hostname.encode('idna').decode()  # Punycode for Unicode hostnames.
+    # Punycode for Unicode hostnames.
+    net_location += iri_parts.hostname.encode('idna').decode()
     # The 'idna' encoding produces ASCII text.
     if iri_parts.port is not None and iri_parts.port != 80:
         net_location += ':' + str(iri_parts.port)
@@ -3423,10 +3478,12 @@ def iri_to_uri(iri, *, allowed_schemes=('http', 'https')):
             urllib.parse.quote_plus(iri_parts.path, safe=r"!$%&'()*+,/:;=@|~"),
 
             # Unsure about the `safe` argument, since this is a legacy way of handling parameters.
-            urllib.parse.quote_plus(iri_parts.params, safe=r"!$%&'()*+,/:;=@|~"),
+            urllib.parse.quote_plus(
+                iri_parts.params, safe=r"!$%&'()*+,/:;=@|~"),
 
             # Not totally sure about the `safe` argument, since the source does not explicitly mention the query URI component.
-            urllib.parse.quote_plus(iri_parts.query, safe=r"!$%&'()*+,/:;=?@{|}~"),
+            urllib.parse.quote_plus(
+                iri_parts.query, safe=r"!$%&'()*+,/:;=?@{|}~"),
 
             urllib.parse.quote_plus(iri_parts.fragment, safe=r"!#$%&'()*+,/:;=?@{|}~")))
 
@@ -3469,6 +3526,7 @@ def clean_podcast_url(url):
             pscrb\.fm/rss/p
         )/''', '', url)
     return re.sub(r'^\w+://(\w+://)', r'\1', url)
+
 
 def time_seconds(**kwargs):
     """
@@ -3515,9 +3573,11 @@ def jwt_decode_hs256(jwt):
     # add trailing ='s that may have been stripped, superfluous ='s are ignored
     return json.loads(base64.urlsafe_b64decode(f'{payload_b64}==='))
 
+
 def join_nonempty(*values, delim='-', from_dict=None):
     if from_dict is not None:
-        values = (traversal.traverse_obj(from_dict, variadic(v)) for v in values)
+        values = (traversal.traverse_obj(from_dict, variadic(v))
+                  for v in values)
     return delim.join(map(str, filter(None, values)))
 
 
@@ -3537,7 +3597,8 @@ def scale_thumbnails_to_max_format_width(formats, thumbnails, url_width_re):
         return thumbnails
     return [
         merge_dicts(
-            {'url': re.sub(url_width_re, str(max_dimensions[0]), thumbnail['url'])},
+            {'url': re.sub(url_width_re, str(
+                max_dimensions[0]), thumbnail['url'])},
             dict(zip(_keys, max_dimensions, strict=True)), thumbnail)
         for thumbnail in thumbnails
     ]
@@ -3551,6 +3612,7 @@ def parse_http_range(range):
     if not crg:
         return None, None, None
     return int(crg.group(1)), int_or_none(crg.group(2)), int_or_none(crg.group(3))
+
 
 def determine_file_encoding(data):
     """
@@ -3569,6 +3631,7 @@ def determine_file_encoding(data):
     mobj = re.match(rb'(?m)^#\s*coding\s*:\s*(\S+)\s*$', data)
     return mobj.group(1).decode() if mobj else None, 0
 
+
 def merge_headers(*dicts):
     """Merge dicts of http headers case insensitively, prioritizing the latter ones"""
     return {k.title(): v for k, v in itertools.chain.from_iterable(map(dict.items, dicts))}
@@ -3584,7 +3647,8 @@ def cached_method(f):
         bound_args.apply_defaults()
         key = tuple(bound_args.arguments.values())[1:]
 
-        cache = vars(self).setdefault('_cached_method__cache', {}).setdefault(f.__name__, {})
+        cache = vars(self).setdefault(
+            '_cached_method__cache', {}).setdefault(f.__name__, {})
         if key not in cache:
             cache[key] = f(self, *args, **kwargs)
         return cache[key]
@@ -3643,8 +3707,10 @@ class Namespace(types.SimpleNamespace):
 MEDIA_EXTENSIONS = Namespace(
     common_video=('avi', 'flv', 'mkv', 'mov', 'mp4', 'webm'),
     video=('3g2', '3gp', 'f4v', 'mk3d', 'divx', 'mpg', 'ogv', 'm4v', 'wmv'),
-    common_audio=('aiff', 'alac', 'flac', 'm4a', 'mka', 'mp3', 'ogg', 'opus', 'wav'),
-    audio=('aac', 'ape', 'asf', 'f4a', 'f4b', 'm4b', 'm4r', 'oga', 'ogx', 'spx', 'vorbis', 'wma', 'weba'),
+    common_audio=('aiff', 'alac', 'flac', 'm4a',
+                  'mka', 'mp3', 'ogg', 'opus', 'wav'),
+    audio=('aac', 'ape', 'asf', 'f4a', 'f4b', 'm4b', 'm4r',
+           'oga', 'ogx', 'spx', 'vorbis', 'wma', 'weba'),
     thumbnails=('jpg', 'png', 'webp'),
     storyboards=('mhtml', ),
     subtitles=('srt', 'vtt', 'ass', 'lrc'),
@@ -3653,7 +3719,8 @@ MEDIA_EXTENSIONS = Namespace(
 MEDIA_EXTENSIONS.video += MEDIA_EXTENSIONS.common_video
 MEDIA_EXTENSIONS.audio += MEDIA_EXTENSIONS.common_audio
 
-KNOWN_EXTENSIONS = (*MEDIA_EXTENSIONS.video, *MEDIA_EXTENSIONS.audio, *MEDIA_EXTENSIONS.manifests)
+KNOWN_EXTENSIONS = (*MEDIA_EXTENSIONS.video, *
+                    MEDIA_EXTENSIONS.audio, *MEDIA_EXTENSIONS.manifests)
 
 
 class _UnsafeExtensionError(Exception):
@@ -3840,12 +3907,15 @@ class RetryManager:
             return warn(e)
         elif isinstance(e, OmniError):
             e = remove_end(str_or_none(e.cause) or e.orig_msg, '.')
-        warn(f'{e}. Retrying{format_field(suffix, None, " %s")} ({count}/{retries})...')
+        warn(f'{e}. Retrying{format_field(
+            suffix, None, " %s")} ({count}/{retries})...')
 
-        delay = float_or_none(sleep_func(n=count - 1)) if callable(sleep_func) else sleep_func
+        delay = float_or_none(sleep_func(n=count - 1)
+                              ) if callable(sleep_func) else sleep_func
         if delay:
             info(f'Sleeping {delay:.2f} seconds ...')
             time.sleep(delay)
+
 
 @partial_application
 def truncate_string(s, left, right=0):
@@ -3867,10 +3937,11 @@ def orderedSet_from_options(options, alias_dict, *, use_regex=False, start=None)
             val = alias_dict[val] if not discard else [
                 i[1:] if i.startswith('-') else f'-{i}' for i in alias_dict[val]]
             # NB: Do not allow regex in aliases for performance
-            requested = orderedSet_from_options(val, alias_dict, start=requested)
+            requested = orderedSet_from_options(
+                val, alias_dict, start=requested)
             continue
 
-        current = (filter(re.compile(val, re.I).fullmatch, alias_dict['all']) if use_regex
+        current = (filter(re.compile(val, re.IGNORECASE).fullmatch, alias_dict['all']) if use_regex
                    else [val] if val in alias_dict['all'] else None)
         if current is None:
             raise ValueError(val)
@@ -3884,6 +3955,7 @@ def orderedSet_from_options(options, alias_dict, *, use_regex=False, start=None)
 
     return orderedSet(requested)
 
+
 def filesize_from_tbr(tbr, duration):
     """
     @param tbr:      Total bitrate in kbps (1000 bits/sec)
@@ -3894,24 +3966,28 @@ def filesize_from_tbr(tbr, duration):
         return None
     return int(duration * tbr * (1000 / 8))
 
+
 def dict_get(d, key_or_keys, default=None, skip_false_values=True):
     for val in map(d.get, variadic(key_or_keys)):
         if val is not None and (val or not skip_false_values):
             return val
     return default
 
+
 class _TreeBuilder(xml.etree.ElementTree.TreeBuilder):
     def doctype(self, name, pubid, system):
         pass
 
+
 def compat_etree_fromstring(text):
     return xml.etree.ElementTree.XML(text, parser=xml.etree.ElementTree.XMLParser(target=_TreeBuilder()))
+
 
 class LazyList(collections.abc.Sequence):
     """Lazy immutable list from an iterable
     Note that slices of a LazyList are lists and not LazyList"""
 
-    class IndexError(IndexError):  # noqa: A001
+    class IndexError(IndexError):
         pass
 
     def __init__(self, iterable, *, reverse=False, _cache=None):
@@ -3945,7 +4021,8 @@ class LazyList(collections.abc.Sequence):
     def __getitem__(self, idx):
         if isinstance(idx, slice):
             if self._reversed:
-                idx = slice(self._reverse_index(idx.start), self._reverse_index(idx.stop), -(idx.step or 1))
+                idx = slice(self._reverse_index(idx.start),
+                            self._reverse_index(idx.stop), -(idx.step or 1))
             start, stop, step = idx.start, idx.stop, idx.step or 1
         elif isinstance(idx, int):
             if self._reversed:
@@ -3994,6 +4071,7 @@ class LazyList(collections.abc.Sequence):
 
     def __str__(self):
         return repr(self.exhaust())
+
 
 def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Callable[[list], typing.Any]] | None = None):
     # based on https://github.com/Rich-Harris/devalue/blob/f3fd2aa93d79f21746555671f955a897335edb1b/src/parse.js
@@ -4056,13 +4134,15 @@ def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Cal
                         yield IndexError(f'{type_name!r} cannot point to itself (index: {source})')
                         continue
                     # inverse order: resolve index, revive value
-                    stack.append((target, index, (type_name, value[1], reviver)))
+                    stack.append(
+                        (target, index, (type_name, value[1], reviver)))
                     stack.append((target, index, value[1]))
                     continue
 
                 elif type_name == 'Date':
                     try:
-                        result = dt.datetime.fromtimestamp(parse_iso8601(value[1]), tz=dt.timezone.utc)
+                        result = dt.datetime.fromtimestamp(
+                            parse_iso8601(value[1]), tz=dt.timezone.utc)
                     except Exception:
                         yield ValueError(f'invalid date: {value[1]!r}')
                         result = None
@@ -4099,7 +4179,8 @@ def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Cal
                 elif type_name == 'ArrayBuffer':
                     try:
                         if len(value) < 2 or not isinstance(value[1], str):
-                            raise TypeError(f'Invalid ArrayBuffer encoding: {value[1:]!r}')
+                            raise TypeError(
+                                f'Invalid ArrayBuffer encoding: {value[1:]!r}')
                         result = base64.b64decode(value[1])
                     except Exception as error:
                         yield ValueError(f'Invalid ArrayBuffer at {source}: {error}')
@@ -4118,12 +4199,14 @@ def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Cal
                                 or isinstance(buffer_index, bool)
                                 or not 0 <= buffer_index < len(parsed)
                             ):
-                                raise IndexError(f'Invalid ArrayBuffer index: {buffer_index!r}')
+                                raise IndexError(f'Invalid ArrayBuffer index: {
+                                                 buffer_index!r}')
 
                             if buffer_index in resolved:
                                 data = resolved[buffer_index]
                                 if not isinstance(data, bytes):
-                                    raise TypeError(f'Invalid ArrayBuffer reference: {buffer_index!r}')
+                                    raise TypeError(f'Invalid ArrayBuffer reference: {
+                                                    buffer_index!r}')
                             else:
                                 buffer = parsed[buffer_index]
                                 if not (
@@ -4132,43 +4215,54 @@ def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Cal
                                     and buffer[0] == 'ArrayBuffer'
                                     and isinstance(buffer[1], str)
                                 ):
-                                    raise TypeError(f'Invalid ArrayBuffer reference: {buffer_index!r}')
-                                data = resolved[buffer_index] = base64.b64decode(buffer[1])
+                                    raise TypeError(f'Invalid ArrayBuffer reference: {
+                                                    buffer_index!r}')
+                                data = resolved[buffer_index] = base64.b64decode(
+                                    buffer[1])
 
                         offset = value[2] if len(value) > 2 else 0
                         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
-                            raise ValueError(f'Invalid byte offset: {offset!r}')
+                            raise ValueError(
+                                f'Invalid byte offset: {offset!r}')
 
                         length = value[3] if len(value) > 3 else None
                         if length is not None and (
-                            not isinstance(length, int) or isinstance(length, bool) or length < 0
+                            not isinstance(length, int) or isinstance(
+                                length, bool) or length < 0
                         ):
                             raise ValueError(f'Invalid length: {length!r}')
 
                         if type_name == 'DataView':
-                            end = len(data) if length is None else offset + length
+                            end = len(
+                                data) if length is None else offset + length
                             if offset > len(data) or end > len(data):
-                                raise ValueError('View exceeds ArrayBuffer length')
+                                raise ValueError(
+                                    'View exceeds ArrayBuffer length')
                             result = data[offset:end]
                         else:
                             typecode = _ARRAY_TYPE_LOOKUP[type_name]
                             itemsize = struct.calcsize(f'={typecode}')
                             if offset % itemsize:
-                                raise ValueError(f'Byte offset {offset} is not aligned to {itemsize}-byte elements')
+                                raise ValueError(f'Byte offset {offset} is not aligned to {
+                                                 itemsize}-byte elements')
                             if offset > len(data):
-                                raise ValueError('View exceeds ArrayBuffer length')
+                                raise ValueError(
+                                    'View exceeds ArrayBuffer length')
 
                             if length is None:
                                 view = data[offset:]
                                 if len(view) % itemsize:
-                                    raise ValueError(f'Byte length is not a multiple of {itemsize}')
+                                    raise ValueError(
+                                        f'Byte length is not a multiple of {itemsize}')
                             else:
                                 end = offset + length * itemsize
                                 if end > len(data):
-                                    raise ValueError('View exceeds ArrayBuffer length')
+                                    raise ValueError(
+                                        'View exceeds ArrayBuffer length')
                                 view = data[offset:end]
 
-                            result = [item[0] for item in struct.iter_unpack(f'={typecode}', view)]
+                            result = [item[0] for item in struct.iter_unpack(
+                                f'={typecode}', view)]
                     except Exception as error:
                         yield ValueError(f'Invalid {type_name} at {source}: {error}')
                         result = None
@@ -4192,6 +4286,7 @@ def parse_iter(parsed: typing.Any, /, *, revivers: dict[str, collections.abc.Cal
         target[index] = resolved[source] = result
 
     return return_value[0]
+
 
 def search_regex(pattern, string, default=NO_DEFAULT, flags=0, group=None):
     """
@@ -4223,8 +4318,9 @@ def search_regex(pattern, string, default=NO_DEFAULT, flags=0, group=None):
     else:
         return None
 
+
 def search_json(start_pattern, string, *, end_pattern='',
-                 contains_pattern=r'{(?s:.+)}', default=NO_DEFAULT, **kwargs):
+                contains_pattern=r'{(?s:.+)}', default=NO_DEFAULT, **kwargs):
     """Searches string for the JSON object specified by start_pattern"""
 
     json_string = search_regex(
@@ -4238,6 +4334,7 @@ def search_json(start_pattern, string, *, end_pattern='',
     except OmniError:
         return default
 
+
 def html_search_regex(pattern, string, name, default=NO_DEFAULT, fatal=True, flags=0, group=None):
     """
     Like _search_regex, but strips HTML tags and unescapes entities.
@@ -4247,12 +4344,14 @@ def html_search_regex(pattern, string, name, default=NO_DEFAULT, fatal=True, fla
         return tuple(map(clean_html, res))
     return clean_html(res)
 
+
 def parse_json(json_string, transform_source=None, **parser_kwargs):
     try:
         return json.loads(
             json_string, cls=LenientJSONDecoder, strict=False, transform_source=transform_source, **parser_kwargs)
     except ValueError as ve:
         raise OmniError('Failed to parse JSON', ve)
+
 
 def og_regexes(prop):
     content_re = r'content=(?:"([^"]+?)"|\'([^\']+?)\'|\s*([^\s"\'=<>`]+?)(?=\s|/?>))'
@@ -4264,10 +4363,12 @@ def og_regexes(prop):
         template % (content_re, property_re),
     ]
 
+
 def meta_regex(prop):
     return rf'''(?isx)<meta
                 (?=[^>]+(?:itemprop|name|property|id|http-equiv)=(["\']?){re.escape(prop)}\1)
                 [^>]+?content=(["\'])(?P<content>.*?)\2'''
+
 
 def og_search_property(prop, html, name=None, **kargs):
     prop = variadic(prop)
@@ -4281,14 +4382,18 @@ def og_search_property(prop, html, name=None, **kargs):
         return None
     return unescapeHTML(escaped)
 
+
 def og_search_thumbnail(html, **kargs):
     return og_search_property('image', html, 'thumbnail URL', fatal=False, **kargs)
+
 
 def og_search_description(html, **kargs):
     return og_search_property('description', html, fatal=False, **kargs)
 
+
 def og_search_title(html, *, fatal=False, **kargs):
     return og_search_property('title', html, fatal=fatal, **kargs)
+
 
 def og_search_video_url(html, name='video url', secure=True, **kargs):
     regexes = og_regexes('video') + og_regexes('video:url')
@@ -4296,11 +4401,14 @@ def og_search_video_url(html, name='video url', secure=True, **kargs):
         regexes = og_regexes('video:secure_url') + regexes
     return html_search_regex(regexes, html, name, **kargs)
 
+
 def og_search_url(html, **kargs):
     return og_search_property('url', html, **kargs)
 
+
 def html_extract_title(self, html, name='title', *, fatal=False, **kwargs):
     return html_search_regex(r'(?s)<title\b[^>]*>([^<]+)</title>', html, name, fatal=fatal, **kwargs)
+
 
 def html_search_meta(self, name, html, display_name=None, fatal=False, **kwargs):
     name = variadic(name)
@@ -4310,8 +4418,10 @@ def html_search_meta(self, name, html, display_name=None, fatal=False, **kwargs)
         [self._meta_regex(n) for n in name],
         html, display_name, fatal=fatal, group='content', **kwargs)
 
+
 def dc_search_uploader(html):
     return html_search_meta('dc.creator', html, 'uploader')
+
 
 def rta_search(html):
     # See http://www.rtalabel.org/index.php?content=howtofaq#single
@@ -4331,10 +4441,12 @@ def rta_search(html):
     for marker in AGE_LIMIT_MARKERS:
         mobj = re.search(marker, html)
         if mobj:
-            age_limit = max(age_limit or 0, int(traversal.traverse_obj(mobj, 1, default=18)))
+            age_limit = max(age_limit or 0, int(
+                traversal.traverse_obj(mobj, 1, default=18)))
     return age_limit
 
-def search_nextjs_data(webpage,*, fatal=True, default=NO_DEFAULT, **kw):
+
+def search_nextjs_data(webpage, *, fatal=True, default=NO_DEFAULT, **kw):
     if default == '{}':
         default = {}
     if default is not NO_DEFAULT:
@@ -4342,9 +4454,10 @@ def search_nextjs_data(webpage,*, fatal=True, default=NO_DEFAULT, **kw):
 
     return search_json(
         r'<script[^>]+id=[\'"]__NEXT_DATA__[\'"][^>]*>', webpage, 'next.js data',
-       end_pattern='</script>', fatal=fatal, default=default, **kw)
+        end_pattern='</script>', fatal=fatal, default=default, **kw)
 
-def search_nextjs_v13_data(webpage,fatal=True):
+
+def search_nextjs_v13_data(webpage, fatal=True):
     """Parses Next.js app router flight data that was introduced in Next.js v13"""
     nextjs_data = {}
     if not fatal and not isinstance(webpage, str):
@@ -4370,7 +4483,8 @@ def search_nextjs_v13_data(webpage,fatal=True):
     # The pattern for the surrounding JS/tag should be strict as it's a hardcoded string in the next.js source
     # Ref: https://github.com/vercel/next.js/blob/5a4a08fdc/packages/next/src/server/app-render/use-flight-response.tsx#L189
     for flight_segment in re.findall(r'<script\b[^>]*>self\.__next_f\.push\((\[.+?\])\)</script>', webpage):
-        segment = parse_json(flight_segment,fatal=fatal, errnote=None if fatal else False)
+        segment = parse_json(flight_segment, fatal=fatal,
+                             errnote=None if fatal else False)
         # Some earlier versions of next.js "optimized" away this array structure; this is unsupported
         # Ref: https://github.com/vercel/next.js/commit/0123a9d5c9a9a77a86f135b7ae30b46ca986d761
         if not isinstance(segment, list) or len(segment) != 2:
@@ -4387,32 +4501,36 @@ def search_nextjs_v13_data(webpage,fatal=True):
             continue
         # The body still isn't guaranteed to be valid JSON, so parsing should always be non-fatal
         if body.startswith('[') and body.endswith(']'):
-            flatten(parse_json(body,fatal=False, errnote=False))
+            flatten(parse_json(body, fatal=False, errnote=False))
         elif body.startswith('{') and body.endswith('}'):
-            data = parse_json(body,fatal=False, errnote=False)
+            data = parse_json(body, fatal=False, errnote=False)
             if data is not None:
                 nextjs_data[prefix] = data
 
     return nextjs_data
 
-def search_nuxt_data(webpage,context_name='__NUXT__', *, fatal=True, traverse=('data', 0)):
+
+def search_nuxt_data(webpage, context_name='__NUXT__', *, fatal=True, traverse=('data', 0)):
     """Parses Nuxt.js metadata. This works as long as the function __NUXT__ invokes is a pure function"""
     rectx = re.escape(context_name)
     FUNCTION_RE = r'\(function\((?P<arg_keys>.*?)\){.*?\breturn\s+(?P<js>{.*?})\s*;?\s*}\((?P<arg_vals>.*?)\)'
     js, arg_keys, arg_vals = search_regex(
-        (rf'<script>\s*window\.{rectx}={FUNCTION_RE}\s*\)\s*;?\s*</script>', rf'{rectx}\(.*?{FUNCTION_RE}'),
+        (rf'<script>\s*window\.{rectx}={FUNCTION_RE}\s*\)\s*;?\s*</script>',
+         rf'{rectx}\(.*?{FUNCTION_RE}'),
         webpage, context_name, group=('js', 'arg_keys', 'arg_vals'),
         default=NO_DEFAULT if fatal else (None, None, None))
     if js is None:
         return {}
 
     args = dict(zip(arg_keys.split(','), map(json.dumps, parse_json(
-        f'[{arg_vals}]',transform_source=js_to_json, fatal=fatal) or ()), strict=True))
+        f'[{arg_vals}]', transform_source=js_to_json, fatal=fatal) or ()), strict=True))
 
-    ret = parse_json(js,transform_source=functools.partial(js_to_json, vars=args), fatal=fatal)
+    ret = parse_json(js, transform_source=functools.partial(
+        js_to_json, vars=args), fatal=fatal)
     return traversal.traverse_obj(ret, traverse) or {}
 
-def resolve_nuxt_array(array,*, fatal=True, default=NO_DEFAULT):
+
+def resolve_nuxt_array(array, *, fatal=True, default=NO_DEFAULT):
     """Resolves Nuxt rich JSON payload arrays"""
     # Ref: https://github.com/nuxt/nuxt/commit/9e503be0f2a24f4df72a3ccab2db4d3e63511f57
     #      https://github.com/nuxt/nuxt/pull/19205
@@ -4450,19 +4568,21 @@ def resolve_nuxt_array(array,*, fatal=True, default=NO_DEFAULT):
         except StopIteration as error:
             return error.value or ({} if default is NO_DEFAULT else default)
 
-def search_nuxt_json(self, webpage,*, fatal=True, default=NO_DEFAULT):
+
+def search_nuxt_json(self, webpage, *, fatal=True, default=NO_DEFAULT):
     """Parses metadata from Nuxt rich JSON payloads embedded in HTML"""
     passed_default = default is not NO_DEFAULT
 
     array = self._search_json(
         r'<script\b[^>]+\bid="__NUXT_DATA__"[^>]*>', webpage,
-        'Nuxt JSON data',contains_pattern=r'\[(?s:.+)\]',
+        'Nuxt JSON data', contains_pattern=r'\[(?s:.+)\]',
         fatal=fatal, default=NO_DEFAULT if not passed_default else None)
 
     if not array:
         return default if passed_default else {}
 
-    return self._resolve_nuxt_array(array,fatal=fatal, default=default)
+    return self._resolve_nuxt_array(array, fatal=fatal, default=default)
+
 
 def hidden_inputs(html):
     html = re.sub(r'<!--(?:(?!<!--).)*-->', '', html)
@@ -4479,20 +4599,25 @@ def hidden_inputs(html):
             hidden_inputs[name] = value
     return hidden_inputs
 
+
 def form_hidden_inputs(form_id, html):
     form = search_regex(
         rf'(?is)<form[^>]+?id=(["\']){form_id}\1[^>]*>(?P<form>.+?)</form>',
         html, f'{form_id} form', group='form')
     return hidden_inputs(form)
 
+
 def merge_subtitle_items(subtitle_list1, subtitle_list2):
     """ Merge subtitle items for one language. Items with duplicated URLs/data
     will be dropped. """
-    list1_data = {(item.get('url'), item.get('data')) for item in subtitle_list1}
+    list1_data = {(item.get('url'), item.get('data'))
+                  for item in subtitle_list1}
     ret = list(subtitle_list1)
-    ret.extend(item for item in subtitle_list2 if (item.get('url'), item.get('data')) not in list1_data)
+    ret.extend(item for item in subtitle_list2 if (
+        item.get('url'), item.get('data')) not in list1_data)
     return ret
-    
+
+
 def merge_subtitles(*dicts, target=None):
     """ Merge subtitle dictionaries, language by language. """
     if target is None:

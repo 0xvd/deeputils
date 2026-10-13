@@ -1,12 +1,14 @@
-from requests import request
-from requests import Response
+from requests import Response, request
 from requests.exceptions import HTTPError
+
 from .utils import update_url_query
+
 
 class RequestError(HTTPError):
     def __init__(self, response) -> None:
         super().__init__(response=response)
         self.status_code = response.status_code
+
 
 class Request:
     def __init__(

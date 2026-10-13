@@ -17,19 +17,19 @@ import xml.etree.ElementTree
 from .utils import (
     IDENTITY,
     NO_DEFAULT,
-    OmniError,
     LazyList,
-    get_elements_html_by_class,
-    get_elements_html_by_attribute,
-    get_elements_by_attribute,
-    get_element_by_class,
-    get_element_html_by_attribute,
+    OmniError,
     get_element_by_attribute,
-    get_element_html_by_id,
+    get_element_by_class,
     get_element_by_id,
+    get_element_html_by_attribute,
     get_element_html_by_class,
-    get_elements_by_class,
+    get_element_html_by_id,
     get_element_text_and_html_by_tag,
+    get_elements_by_attribute,
+    get_elements_by_class,
+    get_elements_html_by_attribute,
+    get_elements_html_by_class,
     is_iterable_like,
     try_call,
     url_or_none,
@@ -105,12 +105,14 @@ def traverse_obj(
                             is always returned. If a path ends on a `dict` that result will always be a `dict`.
     """
 
-    casefold = lambda k: k.casefold() if isinstance(k, str) else k
+    def casefold(k): return k.casefold() if isinstance(k, str) else k
 
     if isinstance(expected_type, type):
-        type_test = lambda val: val if isinstance(val, expected_type) else None
+        def type_test(val): return val if isinstance(
+            val, expected_type) else None
     else:
-        type_test = lambda val: try_call(expected_type or IDENTITY, args=(val,))
+        def type_test(val): return try_call(
+            expected_type or IDENTITY, args=(val,))
 
     def apply_key(key, obj, is_last):
         branching = False
@@ -177,7 +179,8 @@ def traverse_obj(
                 result = ''.join(result)
 
         elif isinstance(key, dict):
-            iter_obj = ((k, _traverse_obj(obj, v, False, is_last)) for k, v in key.items())
+            iter_obj = ((k, _traverse_obj(obj, v, False, is_last))
+                        for k, v in key.items())
             result = {
                 k: v if v is not None else default for k, v in iter_obj
                 if v is not None or default is not NO_DEFAULT
@@ -195,7 +198,8 @@ def traverse_obj(
                     result = obj.group(key)
 
             elif isinstance(key, str):
-                result = next((v for k, v in obj.groupdict().items() if casefold(k) == key), None)
+                result = next(
+                    (v for k, v in obj.groupdict().items() if casefold(k) == key), None)
 
         elif isinstance(key, (int, slice)):
             if is_iterable_like(obj, (collections.abc.Sequence, xml.etree.ElementTree.Element)):
@@ -227,7 +231,8 @@ def traverse_obj(
                     return try_call(element.attrib.get, args=(special[1:],))
                 if special == 'text()':
                     return element.text
-                raise SyntaxError(f'apply_specials is missing case for {special!r}')
+                raise SyntaxError(
+                    f'apply_specials is missing case for {special!r}')
 
             if xpath:
                 result = list(map(apply_specials, obj.iterfind(xpath)))
@@ -320,7 +325,8 @@ def value(value, /):
 def require(name, /, *, expected=False):
     def func(value):
         if value is None:
-            raise _RequiredError(f'Unable to extract {name}', expected=expected)
+            raise _RequiredError(f'Unable to extract {
+                                 name}', expected=expected)
 
         return value
 
@@ -332,11 +338,13 @@ class _RequiredError(OmniError):
 
 
 @typing.overload
-def subs_list_to_dict(*, lang: str | None = 'und', ext: str | None = None) -> collections.abc.Callable[[list[dict]], dict[str, list[dict]]]: ...
+def subs_list_to_dict(*, lang: str | None = 'und', ext: str | None = None) -> collections.abc.Callable[[
+    list[dict]], dict[str, list[dict]]]: ...
 
 
 @typing.overload
-def subs_list_to_dict(subs: list[dict] | None, /, *, lang: str | None = 'und', ext: str | None = None) -> dict[str, list[dict]]: ...
+def subs_list_to_dict(subs: list[dict] | None, /, *, lang: str |
+                      None = 'und', ext: str | None = None) -> dict[str, list[dict]]: ...
 
 
 def subs_list_to_dict(subs: list[dict] | None = None, /, *, lang='und', ext=None):
@@ -380,7 +388,8 @@ def subs_list_to_dict(subs: list[dict] | None = None, /, *, lang='und', ext=None
 
 
 @typing.overload
-def find_element(*, attr: str, value: str, tag: str | None = None, html=False, regex=False): ...
+def find_element(*, attr: str, value: str, tag: str |
+                 None = None, html=False, regex=False): ...
 
 
 @typing.overload
@@ -388,7 +397,8 @@ def find_element(*, cls: str, html=False): ...
 
 
 @typing.overload
-def find_element(*, id: str, tag: str | None = None, html=False, regex=False): ...
+def find_element(*, id: str, tag: str | None = None,
+                 html=False, regex=False): ...
 
 
 @typing.overload
@@ -397,7 +407,8 @@ def find_element(*, tag: str, html=False, regex=False): ...
 
 def find_element(*, tag=None, id=None, cls=None, attr=None, value=None, html=False, regex=False):
     # deliberately using `id=` and `cls=` for ease of readability
-    assert tag or id or cls or (attr and value), 'One of tag, id, cls or (attr AND value) is required'
+    assert tag or id or cls or (
+        attr and value), 'One of tag, id, cls or (attr AND value) is required'
     ANY_TAG = r'[\w:.-]+'
 
     if attr and value:
@@ -426,12 +437,14 @@ def find_elements(*, cls: str, html=False): ...
 
 
 @typing.overload
-def find_elements(*, attr: str, value: str, tag: str | None = None, html=False, regex=False): ...
+def find_elements(*, attr: str, value: str, tag: str |
+                  None = None, html=False, regex=False): ...
 
 
 def find_elements(*, tag=None, cls=None, attr=None, value=None, html=False, regex=False):
     # deliberately using `cls=` for ease of readability
-    assert cls or (attr and value), 'One of cls or (attr AND value) is required'
+    assert cls or (
+        attr and value), 'One of cls or (attr AND value) is required'
 
     if attr and value:
         assert not cls, 'Cannot match both attr and cls'

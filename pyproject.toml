@@ -35,9 +35,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 dynamic = ["version"]
-dependencies = []
-
-[project]
 dependencies = [
   "requests>=2.32.2",
 ]

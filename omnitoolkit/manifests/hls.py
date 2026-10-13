@@ -1,18 +1,17 @@
 import re
 import urllib.parse
-import xml.etree.ElementTree
 
+from _request import Request
 from traversal import traverse_obj
 from utils import (
-    parse_codecs,
-    join_nonempty,
-    float_or_none,
     determine_ext,
-    orderedSet,
     encode_data_uri,
+    float_or_none,
+    join_nonempty,
+    orderedSet,
+    parse_codecs,
     qualities,
 )
-from _request import Request
 
 
 def parse_m3u8_attributes(attrib):
@@ -23,13 +22,17 @@ def parse_m3u8_attributes(attrib):
         info[key] = val
     return info
 
+
 def has_drm(manifest):
     return bool(re.search('|'.join((
         r'#EXT-X-(?:SESSION-)?KEY:.*?URI="skd://',  # Apple FairPlay
-        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.apple\.streamingkeydelivery"',  # Apple FairPlay
-        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.microsoft\.playready"',  # Microsoft PlayReady
+        # Apple FairPlay
+        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.apple\.streamingkeydelivery"',
+        # Microsoft PlayReady
+        r'#EXT-X-(?:SESSION-)?KEY:.*?KEYFORMAT="com\.microsoft\.playready"',
         r'#EXT-X-FAXS-CM:',  # Adobe Flash Access
     )), manifest))
+
 
 def parse_m3u8_formats_and_subtitles(
         m3u8_doc, m3u8_url=None, ext=None, entry_protocol='m3u8_native',
@@ -41,7 +44,7 @@ def parse_m3u8_formats_and_subtitles(
         return url if re.match(r'https?://', url) else urllib.parse.urljoin(m3u8_url, url)
 
     def _extract_m3u8_playlist_indices(*args, **kwargs):
-            return [None]
+        return [None]
 
     # References:
     # 1. https://tools.ietf.org/html/draft-pantos-http-live-streaming-21
@@ -79,7 +82,8 @@ def parse_m3u8_formats_and_subtitles(
     def extract_media(x_media_line):
         media = parse_m3u8_attributes(x_media_line)
         # As per [1, 4.3.4.1] TYPE, GROUP-ID and NAME are REQUIRED
-        media_type, group_id, name = media.get('TYPE'), media.get('GROUP-ID'), media.get('NAME')
+        media_type, group_id, name = media.get(
+            'TYPE'), media.get('GROUP-ID'), media.get('NAME')
         if not (media_type and group_id and name):
             return
         groups.setdefault(group_id, []).append(media)
@@ -110,7 +114,8 @@ def parse_m3u8_formats_and_subtitles(
         if media_url:
             manifest_url = format_url(media_url)
             is_audio = media_type == 'AUDIO'
-            is_alternate = media.get('DEFAULT') == 'NO' or media.get('AUTOSELECT') == 'NO'
+            is_alternate = media.get(
+                'DEFAULT') == 'NO' or media.get('AUTOSELECT') == 'NO'
             formats.extend({
                 'format_id': join_nonempty(m3u8_id, group_id, name, idx),
                 'format_note': name,
@@ -195,7 +200,8 @@ def parse_m3u8_formats_and_subtitles(
 
                 resolution = last_stream_inf.get('RESOLUTION')
                 if resolution:
-                    mobj = re.search(r'(?P<width>\d+)[xX](?P<height>\d+)', resolution)
+                    mobj = re.search(
+                        r'(?P<width>\d+)[xX](?P<height>\d+)', resolution)
                     if mobj:
                         f['width'] = int(mobj.group('width'))
                         f['height'] = int(mobj.group('height'))
@@ -204,7 +210,8 @@ def parse_m3u8_formats_and_subtitles(
                     r'audio.*?(?:%3D|=)(\d+)(?:-video.*?(?:%3D|=)(\d+))?', f['url'])
                 if mobj:
                     abr, vbr = mobj.groups()
-                    abr, vbr = float_or_none(abr, 1000), float_or_none(vbr, 1000)
+                    abr, vbr = float_or_none(
+                        abr, 1000), float_or_none(vbr, 1000)
                     f.update({
                         'vbr': vbr,
                         'abr': abr,
@@ -252,7 +259,8 @@ def parse_m3u8_formats_and_subtitles(
     # For sorting purposes, set source_preference based on the quality of the video formats they are grouped with
     # See https://github.com/yt-dlp/yt-dlp/issues/11178
     audio_groups_by_quality = orderedSet(f['_audio_group_id'] for f in sorted(
-        traverse_obj(formats, lambda _, v: v.get('vcodec') != 'none' and v['_audio_group_id']),
+        traverse_obj(formats, lambda _, v: v.get('vcodec')
+                     != 'none' and v['_audio_group_id']),
         key=lambda x: (x.get('tbr') or 0, x.get('width') or 0)))
     audio_quality_map = {
         audio_groups_by_quality[0]: 'low',
@@ -270,6 +278,7 @@ def parse_m3u8_formats_and_subtitles(
 
     return formats, subtitles
 
+
 def parse_m3u8_vod_duration(m3u8_vod):
     if '#EXT-X-ENDLIST' not in m3u8_vod:
         return None
@@ -277,10 +286,13 @@ def parse_m3u8_vod_duration(m3u8_vod):
     return int(sum(
         float(line[len('#EXTINF:'):].split(',')[0])
         for line in m3u8_vod.splitlines() if line.startswith('#EXTINF:'))) or None
+
 
 def extract_m3u8_vod_duration(m3u8_vod_url, data=None, headers={}, query={}):
-    m3u8_vod = Request(m3u8_vod_url, data=data, headers=headers, query=query)().text
+    m3u8_vod = Request(m3u8_vod_url, data=data,
+                       headers=headers, query=query)().text
     return parse_m3u8_vod_duration(m3u8_vod or '')
+
 
 def parse_m3u8_vod_duration(m3u8_vod):
     if '#EXT-X-ENDLIST' not in m3u8_vod:
@@ -289,14 +301,16 @@ def parse_m3u8_vod_duration(m3u8_vod):
     return int(sum(
         float(line[len('#EXTINF:'):].split(',')[0])
         for line in m3u8_vod.splitlines() if line.startswith('#EXTINF:'))) or None
+
 
 def extract_m3u8_formats(*args, **kwargs):
     fmts, _ = extract_m3u8_formats_and_subtitles(*args, **kwargs)
     return fmts
 
+
 def extract_m3u8_formats_and_subtitles(
-        m3u8_url, ext=None, entry_protocol='m3u8_native', 
-        preference=None, quality=None, m3u8_id=None, live=False, 
+        m3u8_url, ext=None, entry_protocol='m3u8_native',
+        preference=None, quality=None, m3u8_id=None, live=False,
         data=None, headers={}, query={}
 ):
     if not m3u8_url:

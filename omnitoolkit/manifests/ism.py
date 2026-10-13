@@ -1,20 +1,23 @@
 import re
 import urllib.parse
 
+from _request import Request
 from utils import (
+    ISO639Utils,
     int_or_none,
     join_nonempty,
-    ISO639Utils,
 )
-from _request import Request
+
 
 def extract_ism_formats(*args, **kwargs):
     fmts, _ = extract_ism_formats_and_subtitles(*args, **kwargs)
     return fmts
 
+
 def extract_ism_formats_and_subtitles(ism_url, ism_id=None, data=None, headers={}, query={}):
     resp = Request(ism_url, data=data, headers=headers, query=query)()
     return parse_ism_formats_and_subtitles(resp.text, resp.url, ism_id)
+
 
 def parse_ism_formats_and_subtitles(ism_doc, ism_url, ism_id=None):
     """
@@ -45,7 +48,8 @@ def parse_ism_formats_and_subtitles(ism_doc, ism_url, ism_id=None):
             stream_language = ISO639Utils.short2long(stream_language) or 'und'
         for track in stream.findall('QualityLevel'):
             KNOWN_TAGS = {'255': 'AACL', '65534': 'EC-3'}
-            fourcc = track.get('FourCC') or KNOWN_TAGS.get(track.get('AudioTag'))
+            fourcc = track.get('FourCC') or KNOWN_TAGS.get(
+                track.get('AudioTag'))
             # TODO: add support for WVC1 and WMAP
             if fourcc not in ('H264', 'AVC1', 'AACL', 'TTML', 'EC-3'):
                 continue
@@ -57,8 +61,10 @@ def parse_ism_formats_and_subtitles(ism_doc, ism_url, ism_id=None):
             height = int_or_none(track.get('MaxHeight') or track.get('Height'))
             sampling_rate = int_or_none(track.get('SamplingRate'))
 
-            track_url_pattern = re.sub(r'{[Bb]itrate}', track.attrib['Bitrate'], url_pattern)
-            track_url_pattern = urllib.parse.urljoin(ism_url, track_url_pattern)
+            track_url_pattern = re.sub(
+                r'{[Bb]itrate}', track.attrib['Bitrate'], url_pattern)
+            track_url_pattern = urllib.parse.urljoin(
+                ism_url, track_url_pattern)
 
             fragments = []
             fragment_ctx = {
@@ -66,15 +72,19 @@ def parse_ism_formats_and_subtitles(ism_doc, ism_url, ism_id=None):
             }
             stream_fragments = stream.findall('c')
             for stream_fragment_index, stream_fragment in enumerate(stream_fragments):
-                fragment_ctx['time'] = int_or_none(stream_fragment.get('t')) or fragment_ctx['time']
+                fragment_ctx['time'] = int_or_none(
+                    stream_fragment.get('t')) or fragment_ctx['time']
                 fragment_repeat = int_or_none(stream_fragment.get('r')) or 1
-                fragment_ctx['duration'] = int_or_none(stream_fragment.get('d'))
+                fragment_ctx['duration'] = int_or_none(
+                    stream_fragment.get('d'))
                 if not fragment_ctx['duration']:
                     try:
-                        next_fragment_time = int(stream_fragment[stream_fragment_index + 1].attrib['t'])
+                        next_fragment_time = int(
+                            stream_fragment[stream_fragment_index + 1].attrib['t'])
                     except IndexError:
                         next_fragment_time = duration
-                    fragment_ctx['duration'] = (next_fragment_time - fragment_ctx['time']) / fragment_repeat
+                    fragment_ctx['duration'] = (
+                        next_fragment_time - fragment_ctx['time']) / fragment_repeat
                 for _ in range(fragment_repeat):
                     fragments.append({
                         'url': re.sub(r'{start[ _]time}', str(fragment_ctx['time']), track_url_pattern),

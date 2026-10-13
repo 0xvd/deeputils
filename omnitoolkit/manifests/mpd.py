@@ -1,22 +1,23 @@
-import re
-import math
 import collections
+import math
+import re
 import urllib.parse
 import xml.etree.ElementTree
 
+from _request import Request
 from utils import (
+    base_url,
+    float_or_none,
+    int_or_none,
+    join_nonempty,
+    mimetype2ext,
+    parse_codecs,
     parse_duration,
     search_regex,
     try_call,
-    int_or_none,
-    parse_codecs,
-    join_nonempty,
-    mimetype2ext,
     try_get,
-    float_or_none,
-    base_url,
 )
-from _request import Request
+
 
 @staticmethod
 def xpath_ns(path, namespace=None):
@@ -30,13 +31,16 @@ def xpath_ns(path, namespace=None):
             out.append(f'{{{namespace}}}{c}')
     return '/'.join(out)
 
+
 def parse_mpd_formats(*args, **kwargs):
     fmts, _ = parse_mpd_formats_and_subtitles(*args, **kwargs)
     return fmts
 
+
 def parse_mpd_formats_and_subtitles(*args, **kwargs):
     periods = parse_mpd_periods(*args, **kwargs)
     return merge_mpd_periods(periods)
+
 
 def merge_mpd_periods(periods):
     """
@@ -53,12 +57,14 @@ def merge_mpd_periods(periods):
             if format_key not in formats:
                 formats[format_key] = f
             elif 'fragments' in f:
-                formats[format_key].setdefault('fragments', []).extend(f['fragments'])
+                formats[format_key].setdefault(
+                    'fragments', []).extend(f['fragments'])
 
         for sub_lang, sub_info in period['subtitles'].items():
             subtitles.setdefault(sub_lang, []).extend(sub_info)
 
     return list(formats.values()), subtitles
+
 
 def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
     """
@@ -71,7 +77,8 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
     if mpd_doc.get('type') == 'dynamic':
         return [], {}
 
-    namespace = search_regex(r'(?i)^{([^}]+)?}MPD$', mpd_doc.tag, 'namespace', default=None)
+    namespace = search_regex(
+        r'(?i)^{([^}]+)?}MPD$', mpd_doc.tag, 'namespace', default=None)
 
     def add_ns(path):
         return xpath_ns(path, namespace)
@@ -122,7 +129,8 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
             extract_Initialization(segment_list)
             segment_urls_e = segment_list.findall(add_ns('SegmentURL'))
             if segment_urls_e:
-                ms_info['segment_urls'] = [segment.attrib['media'] for segment in segment_urls_e]
+                ms_info['segment_urls'] = [segment.attrib['media']
+                                           for segment in segment_urls_e]
         else:
             segment_template = element.find(add_ns('SegmentTemplate'))
             if segment_template is not None:
@@ -145,19 +153,22 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
             'formats': [],
             'subtitles': collections.defaultdict(list),
         }
-        period_duration = parse_duration(period.get('duration')) or mpd_duration
+        period_duration = parse_duration(
+            period.get('duration')) or mpd_duration
         period_ms_info = extract_multisegment_info(period, {
             'start_number': 1,
             'timescale': 1,
         })
         for adaptation_set in period.findall(add_ns('AdaptationSet')):
-            adaption_set_ms_info = extract_multisegment_info(adaptation_set, period_ms_info)
+            adaption_set_ms_info = extract_multisegment_info(
+                adaptation_set, period_ms_info)
             for representation in adaptation_set.findall(add_ns('Representation')):
                 representation_attrib = adaptation_set.attrib.copy()
                 representation_attrib.update(representation.attrib)
                 # According to [1, 5.3.7.2, Table 9, page 41], @mimeType is mandatory
                 mime_type = representation_attrib['mimeType']
-                content_type = representation_attrib.get('contentType', mime_type.split('/')[0])
+                content_type = representation_attrib.get(
+                    'contentType', mime_type.split('/')[0])
 
                 codec_str = representation_attrib.get('codecs', '')
                 supplemental_codecs = representation_attrib.get(
@@ -174,9 +185,7 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                         content_type = 'video'
                     elif codecs.get('acodec', 'none') != 'none':
                         content_type = 'audio'
-                    elif codecs.get('scodec', 'none') != 'none':
-                        content_type = 'text'
-                    elif mimetype2ext(mime_type) in ('tt', 'dfxp', 'ttml', 'xml', 'json'):
+                    elif codecs.get('scodec', 'none') != 'none' or mimetype2ext(mime_type) in ('tt', 'dfxp', 'ttml', 'xml', 'json'):
                         content_type = 'text'
                     else:
                         continue
@@ -197,7 +206,8 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                 representation_id = representation_attrib.get('id')
                 lang = representation_attrib.get('lang')
                 url_el = representation.find(add_ns('BaseURL'))
-                filesize = int_or_none(url_el.attrib.get('{http://youtube.com/yt/2012/10/10}contentLength') if url_el is not None else None)
+                filesize = int_or_none(url_el.attrib.get(
+                    '{http://youtube.com/yt/2012/10/10}contentLength') if url_el is not None else None)
                 bandwidth = int_or_none(representation_attrib.get('bandwidth'))
                 if representation_id is not None:
                     format_id = representation_id
@@ -240,12 +250,14 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                     }
                 if is_drm_protected(adaptation_set) or is_drm_protected(representation):
                     f['has_drm'] = True
-                representation_ms_info = extract_multisegment_info(representation, adaption_set_ms_info)
+                representation_ms_info = extract_multisegment_info(
+                    representation, adaption_set_ms_info)
 
                 def prepare_template(template_name, identifiers):
                     tmpl = representation_ms_info[template_name]
                     if representation_id is not None:
-                        tmpl = tmpl.replace('$RepresentationID$', representation_id)
+                        tmpl = tmpl.replace(
+                            '$RepresentationID$', representation_id)
                     # First of, % characters outside $...$ templates
                     # must be escaped by doubling for proper processing
                     # by % operator string formatting used further (see
@@ -260,8 +272,10 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                             t += c
                     # Next, $...$ templates are translated to their
                     # %(...) counterparts to be used with % operator
-                    t = re.sub(r'\$({})\$'.format('|'.join(identifiers)), r'%(\1)d', t)
-                    t = re.sub(r'\$({})%([^$]+)\$'.format('|'.join(identifiers)), r'%(\1)\2', t)
+                    t = re.sub(r'\$({})\$'.format(
+                        '|'.join(identifiers)), r'%(\1)d', t)
+                    t = re.sub(
+                        r'\$({})%([^$]+)\$'.format('|'.join(identifiers)), r'%(\1)\2', t)
 
                     return t.replace('$$', '$')
 
@@ -284,7 +298,8 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
 
                 if 'segment_urls' not in representation_ms_info and 'media' in representation_ms_info:
 
-                    media_template = prepare_template('media', ('Number', 'Bandwidth', 'Time'))
+                    media_template = prepare_template(
+                        'media', ('Number', 'Bandwidth', 'Time'))
                     media_location_key = location_key(media_template)
 
                     # As per [1, 5.3.9.4.4, Table 16, page 55] $Number$ and $Time$
@@ -292,8 +307,10 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                     if '%(Number' in media_template and 's' not in representation_ms_info:
                         segment_duration = None
                         if 'total_number' not in representation_ms_info and 'segment_duration' in representation_ms_info:
-                            segment_duration = float_or_none(representation_ms_info['segment_duration'], representation_ms_info['timescale'])
-                            representation_ms_info['total_number'] = math.ceil(float_or_none(period_duration, segment_duration, default=0))
+                            segment_duration = float_or_none(
+                                representation_ms_info['segment_duration'], representation_ms_info['timescale'])
+                            representation_ms_info['total_number'] = math.ceil(
+                                float_or_none(period_duration, segment_duration, default=0))
                         representation_ms_info['fragments'] = [{
                             media_location_key: media_template % {
                                 'Number': segment_number,
@@ -381,7 +398,8 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                         initialization_url = representation_ms_info['initialization_url']
                         if not f.get('url'):
                             f['url'] = initialization_url
-                        f['fragments'].append({location_key(initialization_url): initialization_url})
+                        f['fragments'].append(
+                            {location_key(initialization_url): initialization_url})
                     f['fragments'].extend(representation_ms_info['fragments'])
                     if not period_duration:
                         period_duration = try_get(
@@ -398,18 +416,22 @@ def parse_mpd_periods(mpd_doc, mpd_id=None, mpd_base_url='', mpd_url=None):
                     period_entry['subtitles'][lang or 'und'].append(f)
         yield period_entry
 
+
 def extract_mpd_vod_duration(mpd_url, data=None, headers={}, query={}):
     mpd_doc = Request(mpd_url, data=data, headers=headers, query=query)().text
     if not isinstance(mpd_doc, xml.etree.ElementTree.Element):
         return None
     return int_or_none(parse_duration(mpd_doc.get('mediaPresentationDuration')))
 
+
 def extract_mpd_formats(*args, **kwargs):
     fmts, _ = extract_mpd_formats_and_subtitles(*args, **kwargs)
     return fmts
 
+
 def extract_mpd_formats_and_subtitles(*args, **kwargs):
     return merge_mpd_periods(extract_mpd_periods(*args, **kwargs))
+
 
 def extract_mpd_periods(
         mpd_url, video_id, mpd_id=None, data=None, headers={}, query={}):
@@ -422,9 +444,11 @@ def extract_mpd_periods(
     mpd_base_url = base_url(mpd_url)
     return parse_mpd_periods(mpd_doc, mpd_id, mpd_base_url, mpd_url)
 
+
 def parse_mpd_formats(self, *args, **kwargs):
     fmts, _ = self._parse_mpd_formats_and_subtitles(*args, **kwargs)
     return fmts
+
 
 def parse_mpd_formats_and_subtitles(*args, **kwargs):
     periods = parse_mpd_periods(*args, **kwargs)
