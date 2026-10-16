@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "omnitoolkit"
+name = "dlp_utils"
 authors = [
     {name = "0xvd", email = "0xvd12@gmail.com"},
 ]
@@ -40,16 +40,16 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/0xvd/omnitoolkit"
-Tracker = "https://github.com/0xvd/omnitoolkit/issues"
+Repository = "https://github.com/0xvd/dlp_utils"
+Tracker = "https://github.com/0xvd/dlp_utils/issues"
 
 [tool.hatch.version]
-path = "omnitoolkit/version.py"
+path = "dlp_utils/version.py"
 pattern = "__version__ = '(?P<version>[^']+)'"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/omnitoolkit",
+    "/dlp_utils",
     "/Changelog.md",
     "/LICENSE",
     "/pyproject.toml",
@@ -57,9 +57,9 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["omnitoolkit"]
+packages = ["dlp_utils"]
 exclude = [
-    "/omnitoolkit/**/*.md",
+    "/dlp_utils/**/*.md",
 ]
 
 [tool.hatch.envs.default]
