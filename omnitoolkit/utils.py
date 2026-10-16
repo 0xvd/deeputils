@@ -837,20 +837,6 @@ def formatSeconds(secs, delim=':', msec=False):
         ret = '%d' % time.seconds
     return '%s.%03d' % (ret, time.milliseconds) if msec else ret
 
-
-def bug_reports_message(before=';'):
-    from version import REPOSITORY
-
-    msg = (f'please report this issue on  https://github.com/{REPOSITORY}/issues?q= , '
-           'filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U')
-
-    before = before.rstrip()
-    if not before or before.endswith(('.', '!', '?')):
-        msg = msg[0].title() + msg[1:]
-
-    return (before + ' ' if before else '') + msg
-
-
 class OmniError(Exception):
     """Error during info extraction."""
 
@@ -874,7 +860,7 @@ class OmniError(Exception):
             format_field(self.ie, None, '[%s] '),
             self.orig_msg,
             format_field(self.cause, None, ' (caused by %r)'),
-            '' if self.expected else bug_reports_message()))
+            '' if self.expected else 'Error Occured'))
 
     def format_traceback(self):
         return join_nonempty(
