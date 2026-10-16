@@ -1,4 +1,4 @@
-from manifests import *
+from .manifests import *
 
 from .traversal import *
 from .utils import *

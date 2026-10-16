@@ -1,8 +1,8 @@
 import re
 import urllib.parse
 
-from _request import Request
-from utils import (
+from .._request import Request
+from ..utils import (
     ISO639Utils,
     int_or_none,
     join_nonempty,

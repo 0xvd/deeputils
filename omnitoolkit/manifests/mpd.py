@@ -4,8 +4,8 @@ import re
 import urllib.parse
 import xml.etree.ElementTree
 
-from _request import Request
-from utils import (
+from .._request import Request
+from ..utils import (
     base_url,
     float_or_none,
     int_or_none,

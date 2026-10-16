@@ -1,9 +1,9 @@
 import re
 import urllib.parse
 
-from _request import Request
-from traversal import traverse_obj
-from utils import (
+from .._request import Request
+from ..traversal import traverse_obj
+from ..utils import (
     determine_ext,
     encode_data_uri,
     float_or_none,
