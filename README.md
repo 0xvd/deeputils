@@ -4,7 +4,7 @@ dlp_utils is a Python library that is adapated from [yt-dlp](https://github.com/
 ## Installation
 
 ```bash
-pip install dlp_utils
+pip install git+https://github.com/0xvd/dlp_utils
 ```
 
 ## Usage
