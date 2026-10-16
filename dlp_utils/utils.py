@@ -181,6 +181,11 @@ JSON_LD_RE = r'(?is)<script[^>]+type=(["\']?)application/ld\+json\1[^>]*>\s*(?P<
 
 NUMBER_RE = r'\d+(?:\.\d+)?'
 
+VOID_ELEMENTS = [
+    'area', 'base', 'br', 'col', 'embed',
+    'hr', 'img', 'input', 'link', 'meta',
+    'param', 'source', 'track', 'wbr',
+]
 
 @functools.cache
 def preferredencoding():
@@ -352,15 +357,13 @@ def get_elements_text_and_html_by_attribute(attribute, value, html, *, tag=r'[\w
     if not value:
         return
 
-    quote = '' if re.match(r'''[\s"'`=<>]''', value) else '?'
-
     value = re.escape(value) if escape_value else value
 
     partial_element_re = rf'''(?x)
         <(?P<tag>{tag})
-         (?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?
-         \s{re.escape(attribute)}\s*=\s*(?P<_q>['"]{quote})(?-x:{value})(?P=_q)
-        '''
+        (?:\s[^>"']*|"[^"]*"|'[^']*')*?
+        \s{re.escape(attribute)}\s*=\s*(?P<q>['"])?(?-x:{value})(?(q)(?P=q)|(?=[\s/>]))
+    '''
 
     for m in re.finditer(partial_element_re, html):
         content, whole = get_element_text_and_html_by_tag(
@@ -427,12 +430,17 @@ def get_element_text_and_html_by_tag(tag, html):
             return haystack.index(needle)
         except ValueError:
             raise exc
-    closing_tag = f'</{tag}>'
     whole_start = find_or_raise(
         html, f'<{tag}', ValueError(f'opening {tag} tag not found'))
     content_start = find_or_raise(
         html[whole_start:], '>', ValueError(f'malformed opening {tag} tag'))
     content_start += whole_start + 1
+
+    if tag in VOID_ELEMENTS:
+        return '', html[whole_start:content_start]
+
+    closing_tag = f'</{tag}>'
+
     with HTMLBreakOnClosingTagParser() as parser:
         parser.feed(html[whole_start:content_start])
         if not parser.tagstack or parser.tagstack[0] != tag:
@@ -782,13 +790,7 @@ def _htmlentity_transform(entity_with_semicolon):
 
 
 def unescapeHTML(s):
-    if s is None:
-        return None
-    assert isinstance(s, str)
-
-    return re.sub(
-        r'&([^&;]+;)', lambda m: _htmlentity_transform(m.group(1)), s)
-
+    return html.unescape(s) if isinstance(s, str) else None
 
 def escapeHTML(text):
     return (
@@ -806,13 +808,6 @@ class netrc_from_content(netrc.netrc):
         self.hosts, self.macros = {}, {}
         with io.StringIO(content) as stream:
             self._parse('-', stream, False)
-
-
-def encodeArgument(s):
-    # Legacy code that uses byte strings
-    # Uncomment the following line after fixing all post processors
-    # assert isinstance(s, str), 'Internal error: %r should be of type %r, is %r' % (s, str, type(s))
-    return s if isinstance(s, str) else s.decode('ascii')
 
 
 _timetuple = collections.namedtuple(
@@ -1758,10 +1753,6 @@ def merge_dicts(*dicts):
     return merged
 
 
-def encode_compat_str(string, encoding=preferredencoding(), errors='strict'):
-    return string if isinstance(string, str) else str(string, encoding, errors)
-
-
 US_RATINGS = {
     'G': 0,
     'PG': 10,
@@ -2369,7 +2360,7 @@ def dfxp2srt(dfxp_data):
         for ns in v:
             dfxp_data = dfxp_data.replace(ns, k)
 
-    dfxp = compat_etree_fromstring(dfxp_data)
+    dfxp = xml.etree.ElementTree.fromstring(dfxp_data)
     out = []
     paras = dfxp.findall(_x('.//ttml:p')) or dfxp.findall('.//p')
 
@@ -3203,58 +3194,6 @@ class GeoUtils:
         return str(socket.inet_ntoa(
             struct.pack('!L', random.randint(addr_min, addr_max))))
 
-
-# Both long_to_bytes and bytes_to_long are adapted from PyCrypto, which is
-# released into Public Domain
-# https://github.com/dlitz/pycrypto/blob/master/lib/Crypto/Util/number.py#L387
-
-def long_to_bytes(n, blocksize=0):
-    """long_to_bytes(n:long, blocksize:int) : string
-    Convert a long integer to a byte string.
-
-    If optional blocksize is given and greater than zero, pad the front of the
-    byte string with binary zeros so that the length is a multiple of
-    blocksize.
-    """
-    # after much testing, this algorithm was deemed to be the fastest
-    s = b''
-    n = int(n)
-    while n > 0:
-        s = struct.pack('>I', n & 0xffffffff) + s
-        n = n >> 32
-    # strip off leading zeros
-    for i in range(len(s)):
-        if s[i] != b'\000'[0]:
-            break
-    else:
-        # only happens when n == 0
-        s = b'\000'
-        i = 0
-    s = s[i:]
-    # add back some pad bytes.  this could be done more efficiently w.r.t. the
-    # de-padding being done above, but sigh...
-    if blocksize > 0 and len(s) % blocksize:
-        s = (blocksize - len(s) % blocksize) * b'\000' + s
-    return s
-
-
-def bytes_to_long(s):
-    """bytes_to_long(string) : long
-    Convert a byte string to a long integer.
-
-    This is (essentially) the inverse of long_to_bytes().
-    """
-    acc = 0
-    length = len(s)
-    if length % 4:
-        extra = (4 - length % 4)
-        s = b'\000' * extra + s
-        length = length + extra
-    for i in range(0, length, 4):
-        acc = (acc << 32) + struct.unpack('>I', s[i:i + 4])[0]
-    return acc
-
-
 def ohdave_rsa_encrypt(data, exponent, modulus):
     """
     Implement OHDave's RSA algorithm. See http://www.ohdave.com/rsa/
@@ -3960,15 +3899,6 @@ def dict_get(d, key_or_keys, default=None, skip_false_values=True):
     return default
 
 
-class _TreeBuilder(xml.etree.ElementTree.TreeBuilder):
-    def doctype(self, name, pubid, system):
-        pass
-
-
-def compat_etree_fromstring(text):
-    return xml.etree.ElementTree.XML(text, parser=xml.etree.ElementTree.XMLParser(target=_TreeBuilder()))
-
-
 class LazyList(collections.abc.Sequence):
     """Lazy immutable list from an iterable
     Note that slices of a LazyList are lists and not LazyList"""
@@ -4481,7 +4411,11 @@ def search_nextjs_v13_data(webpage, fatal=True):
         if payload_type == 1:
             flight_text += chunk
 
-    for f in flight_text.splitlines():
+    marker_re = re.compile(r'(?<![0-9A-Za-z:"])([0-9a-f]+):(?=[A-Z\[\{])')
+    markers = list(marker_re.finditer(flight_text))
+    for m, n in itertools.zip_longest(markers, markers[1:]):
+        end = n.start() if n else len(flight_text)
+        f = flight_text[m.start():end].strip()
         prefix, _, body = f.lstrip().partition(':')
         if not re.fullmatch(r'[0-9a-f]+', prefix):
             continue
